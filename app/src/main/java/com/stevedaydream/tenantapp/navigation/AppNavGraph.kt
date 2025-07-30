@@ -9,6 +9,9 @@ import com.stevedaydream.tenantapp.ui.HomeScreen
 import com.stevedaydream.tenantapp.ui.RepairScreen
 import com.stevedaydream.tenantapp.ui.HistoryScreen
 import com.stevedaydream.tenantapp.ui.ContractPreviewScreen
+import com.stevedaydream.tenantapp.ui.RoomManageScreen
+import com.stevedaydream.tenantapp.ui.ElectricityCalcScreen
+import com.stevedaydream.tenantapp.ui.AnnouncementScreen
 
 @Composable
 fun AppNavGraph(navController: NavHostController, db: AppDatabase) {
@@ -24,6 +27,16 @@ fun AppNavGraph(navController: NavHostController, db: AppDatabase) {
         }
         composable("contract") {
             ContractPreviewScreen(navController)
+        }
+
+        composable("room_manage") {
+            RoomManageScreen(db.roomDao(), navController)
+        }
+        composable("electricity") {
+            ElectricityCalcScreen(db.roomDao(), db.electricMeterDao(), navController)
+        }
+        composable("announcement") {
+            AnnouncementScreen(db.announcementDao())
         }
     }
 }
