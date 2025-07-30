@@ -17,4 +17,9 @@ interface ElectricMeterDao {
 
     @Query("SELECT * FROM electric_meter_records WHERE roomNumber = :roomNo AND recordMonth = :month LIMIT 1")
     suspend fun getRecord(roomNo: String, month: String): ElectricMeterRecord?
+    @Query("SELECT * FROM electric_meter_records")
+    fun getAllRecords(): Flow<List<ElectricMeterRecord>>
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertOrUpdateRecords(records: List<ElectricMeterRecord>)
+
 }

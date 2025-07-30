@@ -71,6 +71,11 @@ dependencies {
 // 協程
     implementation ("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.0")
 // Google Drive API（同步部分）
+    implementation ("com.google.accompanist:accompanist-flowlayout:0.28.0")
+//    excel import
+    implementation ("net.sourceforge.jexcelapi:jxl:2.6.12")
+    implementation ("androidx.compose.material:material-icons-extended:<compose_version>")
+
 //    implementation ("com.google.api-client:google-api-client-android:1.33.0")
 //    implementation ("com.google.api-client:google-api-client-gson:1.33.0")
 //    implementation ("com.google.apis:google-api-services-drive:v3-rev20230710-2.0.0")

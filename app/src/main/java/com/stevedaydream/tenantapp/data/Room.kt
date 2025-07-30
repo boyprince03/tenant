@@ -14,5 +14,6 @@ data class RoomEntity(
     val status: String = "",             // 房屋狀態（如：出租中/空房/維修中）
     val rentStartDate: String = "",      // 租賃開始日期 yyyy-MM-dd
     val rentEndDate: String = "",        // 租賃結束日期 yyyy-MM-dd
-    val rentDuration: String = ""        // 租賃期間（如："1年" 或 "12個月"）
+    val rentDuration: String = "",        // 租賃期間（如："1年" 或 "12個月"）
+    val landlordCode: String // 新增
 )

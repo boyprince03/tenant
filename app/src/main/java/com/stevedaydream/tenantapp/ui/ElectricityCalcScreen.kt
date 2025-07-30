@@ -59,10 +59,18 @@ fun ElectricityCalcScreen(
                         text = { Text("首頁") },
                         onClick = {
                             expanded = false
-                            navController.navigate("mainhome")
+                            navController.navigate("mainhome"){
+                                popUpTo("mainhome") { inclusive = false }
+                            }
                         }
                     )
-                    // 可再加選單
+                    DropdownMenuItem(
+                        text = { Text("度數查詢") },
+                        onClick = {
+                            expanded = false
+                            navController.navigate("electricity_query")
+                        }
+                    )
                 }
             }
         ) }

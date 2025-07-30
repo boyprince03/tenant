@@ -10,8 +10,9 @@ import androidx.room.RoomDatabase
         RoomEntity::class,
         ElectricMeterRecord::class,
         Announcement::class,
+        User::class,
                ],
-    version = 4, // 資料庫升級
+    version = 6, // 資料庫升級
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -19,6 +20,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun roomDao(): RoomDao
     abstract fun electricMeterDao(): ElectricMeterDao // 新增
     abstract fun announcementDao(): AnnouncementDao   // ←加這行
+    abstract fun userDao(): UserDao
+
 
     companion object {
         @Volatile private var instance: AppDatabase? = null

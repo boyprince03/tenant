@@ -11,11 +11,14 @@ interface RoomDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertRoom(room: RoomEntity)
 
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertRooms(rooms: List<RoomEntity>)
     @Query("SELECT * FROM rooms ORDER BY roomNumber ASC")
     fun getAllRoomsNow(): List<RoomEntity>
     @Delete
     suspend fun deleteRoom(room: RoomEntity)
+    @Query("SELECT * FROM rooms WHERE landlordCode = :code")
+    fun getRoomsByLandlordCode(code: String): List<RoomEntity>
 
 }

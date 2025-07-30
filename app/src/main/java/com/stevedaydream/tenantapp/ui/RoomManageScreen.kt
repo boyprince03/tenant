@@ -66,7 +66,7 @@ fun RoomManageScreen(roomDao: RoomDao, navController: NavHostController) {
         Column(Modifier.padding(innerPadding).padding(16.dp)) {
             Button(
                 onClick = {
-                    editingRoom = RoomEntity(roomNumber = "")
+                    editingRoom = RoomEntity(roomNumber = "", landlordCode = "")
                     showDialog = true
                 },
                 modifier = Modifier.fillMaxWidth()
@@ -104,7 +104,7 @@ fun RoomManageScreen(roomDao: RoomDao, navController: NavHostController) {
 
         if (showDialog) {
             RoomEditDialog(
-                room = editingRoom ?: RoomEntity(""),
+                room = editingRoom ?: RoomEntity("", landlordCode = ""),
                 onDismiss = { showDialog = false },
                 onSave = { room ->
                     scope.launch {
@@ -274,7 +274,8 @@ fun RoomEditDialog(
                             status = status,
                             rentStartDate = rentStartDate,
                             rentEndDate = rentEndDate,
-                            rentDuration = rentDuration
+                            rentDuration = rentDuration,
+                            landlordCode = room.landlordCode
                         )
                     )
                 }
