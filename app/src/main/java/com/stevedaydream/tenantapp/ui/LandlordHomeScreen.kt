@@ -3,21 +3,55 @@
 package com.stevedaydream.tenantapp.ui
 
 
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.Engineering
+import androidx.compose.material.icons.filled.FlashOn
+import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.filled.NoteAdd
+import androidx.compose.material.icons.filled.PointOfSale
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Divider
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ElevatedButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.stevedaydream.tenantapp.data.AppDatabase
-import androidx.compose.material.icons.filled.Visibility
-import androidx.compose.material.icons.filled.VisibilityOff
-
-
-
+import com.stevedaydream.tenantapp.data.RepairReportDao
+import java.text.SimpleDateFormat
+import java.util.*
 
 @Composable
 fun LandlordHomeScreen(
@@ -28,22 +62,25 @@ fun LandlordHomeScreen(
     val context = LocalContext.current
     val db = AppDatabase.getDatabase(context)
     val announcementDao = db.announcementDao()
+    val repairReportDao = db.repairReportDao()
     val announcements by announcementDao.getAll().collectAsState(initial = emptyList())
+    val repairReports by repairReportDao.getAll().collectAsState(initial = emptyList())
 
     var expanded by remember { mutableStateOf(false) }
-    // 序號遮蔽狀態
     var codeVisible by remember { mutableStateOf(false) }
-    // 遮蔽函數
     fun maskCode(code: String): String {
         return if (code.length <= 4) "*".repeat(code.length)
         else code.take(2) + "*".repeat(code.length - 4) + code.takeLast(2)
     }
 
+    // 日期格式化工具
+    val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.TAIWAN)
+
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("租客系統") },
+                title = { Text("房東後台", style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold)) },
                 actions = {
                     IconButton(onClick = { expanded = true }) {
                         Icon(Icons.Default.MoreVert, contentDescription = "選單")
@@ -69,83 +106,155 @@ fun LandlordHomeScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
-                .padding(16.dp)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // ★★ 序號顯示區 (title下方)
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("你的房東序號: ")
-                Text(
-                    text = if (codeVisible) landlordCode else maskCode(landlordCode),
-                    style = MaterialTheme.typography.titleMedium
-                )
+            // 房東序號顯示區
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("您的房東序號: ", style = MaterialTheme.typography.bodyLarge)
+                    Text(
+                        text = if (codeVisible) landlordCode else maskCode(landlordCode),
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
                 IconButton(onClick = { codeVisible = !codeVisible }) {
                     Icon(
                         imageVector = if (codeVisible) Icons.Filled.Visibility else Icons.Filled.VisibilityOff,
                         contentDescription = if (codeVisible) "隱藏序號" else "顯示序號"
                     )
-
                 }
             }
-            Text("歡迎使用租客APP", style = MaterialTheme.typography.headlineMedium)
-            // 最新公告區
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // 最新公告卡片
+            Text(
+                "📢 最新公告",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold
+            )
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
             ) {
-                Column(Modifier.padding(12.dp)) {
-                    Text("📢 最新公告", style = MaterialTheme.typography.titleMedium)
+                Column(Modifier.padding(16.dp)) {
                     if (announcements.isEmpty()) {
-                        Text("目前沒有公告")
+                        Text("目前沒有公告", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     } else {
                         announcements.take(3).forEach {
-                            Text(it.title, style = MaterialTheme.typography.bodyMedium)
-                            Text(it.content, maxLines = 2)
-                            Divider()
+                            Text(it.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                            Text(it.content, maxLines = 2, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Divider(modifier = Modifier.padding(vertical = 4.dp), color = MaterialTheme.colorScheme.outlineVariant)
                         }
                     }
                     TextButton(
                         onClick = { onNavigate("announcement") },
-                        modifier = Modifier.align(Alignment.End)
+                        modifier = Modifier
+                            .align(Alignment.End)
+                            .padding(top = 8.dp)
                     ) { Text("查看更多公告") }
                 }
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
-            Button(
+            // 優化後的修繕回報區塊，顯示更詳細的資訊
+            Text(
+                "🛠️ 最新修繕回報",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold
+            )
+            Card(
                 modifier = Modifier.fillMaxWidth(),
-                onClick = { onNavigate("home") }
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
             ) {
-                Text("前往填寫修繕回報")
+                Column(Modifier.padding(16.dp)) {
+                    if (repairReports.isEmpty()) {
+                        Text("目前沒有新的修繕回報", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    } else {
+                        // 顯示最新的三筆修繕回報，並包含日期和詳細資訊
+                        repairReports.take(3).forEach { report ->
+                            Column(Modifier.fillMaxWidth()) {
+                                Text(
+                                    "房號: ${report.roomNumber} - ${report.issue}",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                Text(
+                                    "租客: ${report.tenantName}",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Text(
+                                    "描述: ${report.description}",
+                                    maxLines = 2,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Text(
+                                    "回報時間: ${dateFormat.format(Date(report.date))}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Divider(
+                                    modifier = Modifier.padding(vertical = 8.dp),
+                                    color = MaterialTheme.colorScheme.outlineVariant
+                                )
+                            }
+                        }
+                    }
+                    TextButton(
+                        onClick = { onNavigate("repair_report_list") },
+                        modifier = Modifier
+                            .align(Alignment.End)
+                            .padding(top = 8.dp)
+                    ) { Text("查看所有回報") }
+                }
             }
-            // 新增這段
-            Spacer(modifier = Modifier.height(16.dp))
-            Button(
+
+            // 功能按鈕
+            ElevatedButton(
                 modifier = Modifier.fillMaxWidth(),
-                onClick = { onNavigate("contract") }   // 跳轉到合約頁面
+                onClick = { onNavigate("history") }
             ) {
-                Text("產生電子合約（PDF）")
+                Icon(Icons.Default.Engineering, contentDescription = "查詢修繕回報", modifier = Modifier.padding(end = 8.dp))
+                Text("查詢修繕回報資料", style = MaterialTheme.typography.bodyLarge)
             }
-            Spacer(modifier = Modifier.height(16.dp))
-            Button(
+            ElevatedButton(
+                modifier = Modifier.fillMaxWidth(),
+                onClick = { onNavigate("contract") }
+            ) {
+                Icon(Icons.Default.Description, contentDescription = "產生電子合約", modifier = Modifier.padding(end = 8.dp))
+                Text("產生電子合約（PDF）", style = MaterialTheme.typography.bodyLarge)
+            }
+            ElevatedButton(
                 modifier = Modifier.fillMaxWidth(),
                 onClick = { onNavigate("room_manage") }
-            ) { Text("房間資料管理") }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            Button(
+            ) {
+                Icon(Icons.Default.Home, contentDescription = "房間資料管理", modifier = Modifier.padding(end = 8.dp))
+                Text("房間資料管理", style = MaterialTheme.typography.bodyLarge)
+            }
+            ElevatedButton(
                 modifier = Modifier.fillMaxWidth(),
                 onClick = { onNavigate("electricity") }
-            ) { Text("電表計算頁面") }
-            Spacer(modifier = Modifier.height(16.dp))
-            Button(
+            ) {
+                Icon(Icons.Default.FlashOn, contentDescription = "電表計算頁面", modifier = Modifier.padding(end = 8.dp))
+                Text("電表計算頁面", style = MaterialTheme.typography.bodyLarge)
+            }
+            ElevatedButton(
                 modifier = Modifier.fillMaxWidth(),
                 onClick = { onNavigate("excel_import") }
             ) {
-                Text("匯入 Excel 資料")
+                Icon(Icons.Default.NoteAdd, contentDescription = "匯入 Excel 資料", modifier = Modifier.padding(end = 8.dp))
+                Text("匯入 Excel 資料", style = MaterialTheme.typography.bodyLarge)
             }
-
-
         }
     }
 }

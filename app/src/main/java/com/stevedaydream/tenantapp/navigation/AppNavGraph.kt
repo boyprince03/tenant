@@ -7,7 +7,7 @@ import androidx.navigation.compose.composable
 import com.stevedaydream.tenantapp.data.AppDatabase
 import com.stevedaydream.tenantapp.ui.TenantHomeScreen
 import com.stevedaydream.tenantapp.ui.RepairScreen
-import com.stevedaydream.tenantapp.ui.HistoryScreen
+import com.stevedaydream.tenantapp.ui.RepairHistoryScreen
 import com.stevedaydream.tenantapp.ui.ContractPreviewScreen
 import com.stevedaydream.tenantapp.ui.RoomManageScreen
 import com.stevedaydream.tenantapp.ui.ElectricityCalcScreen
@@ -18,14 +18,15 @@ import com.stevedaydream.tenantapp.ui.LandlordHomeScreen
 import com.stevedaydream.tenantapp.ui.LoginScreen
 import com.stevedaydream.tenantapp.ui.RegisterScreen
 import androidx.compose.runtime.*
+import com.stevedaydream.tenantapp.data.User
 
-import com.stevedaydream.tenantapp.ui.LandlordHomeScreen
+import com.stevedaydream.tenantapp.ui.VisitorHomeScreen
 import kotlinx.coroutines.launch
 
 
 @Composable
 fun AppNavGraph(navController: NavHostController, db: AppDatabase) {
-    NavHost(navController, startDestination = "login") {
+    NavHost(navController, startDestination = "visitor_home") {
         composable("login") {
             LoginScreen(
                 onLoginSuccess = { user ->
@@ -35,14 +36,16 @@ fun AppNavGraph(navController: NavHostController, db: AppDatabase) {
                         navController.navigate("landlord_home/${user.id}")
                 },
                 onNavigateRegister = { navController.navigate("register") },
-                userDao = db.userDao()
+                userDao = db.userDao(),
+                navController = navController    // <--- 這裡要加上去
             )
         }
 
         composable("register") {
             RegisterScreen(
                 onRegisterSuccess = { navController.popBackStack() },
-                userDao = db.userDao()
+                userDao = db.userDao(),
+                navController = navController    // <--- 這裡要加上去
             )
         }
         composable("tenant_home/{userId}") { backStackEntry ->
@@ -53,11 +56,20 @@ fun AppNavGraph(navController: NavHostController, db: AppDatabase) {
             val userId = backStackEntry.arguments?.getString("userId")?.toIntOrNull() ?: 0
             LandlordHomeScreenWrapper(userId = userId, db = db, onNavigate = { navController.navigate(it) })
         }
+        composable("visitor_home") {
+            VisitorHomeScreen(
+                onNavigate = { navController.navigate(it) },
+                announcementDao = db.announcementDao(),
+                roomDao = db.roomDao(),
+                navController = navController    // <--- 這裡要加上去
+            )
+        }
+
         composable("home") {
             RepairScreen(navController, db.repairReportDao())
         }
         composable("history") {
-            HistoryScreen(navController, db.repairReportDao())
+            RepairHistoryScreen(navController, db.repairReportDao())
         }
         composable("contract") {
             ContractPreviewScreen(navController)
@@ -85,7 +97,7 @@ fun LandlordHomeScreenWrapper(
     db: AppDatabase,
     onNavigate: (String) -> Unit
 ) {
-    var user by remember { mutableStateOf<com.stevedaydream.tenantapp.data.User?>(null) }
+    var user by remember { mutableStateOf<User?>(null) }
     val scope = rememberCoroutineScope()
 
     LaunchedEffect(userId) {

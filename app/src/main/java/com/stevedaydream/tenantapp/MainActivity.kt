@@ -28,9 +28,7 @@ class MainActivity : ComponentActivity() {
             RoomEntity(roomNumber = "503", landlordCode = "testcode2"),
             RoomEntity(roomNumber = "504", landlordCode = "testcode2")
         )
-
-
-
+        
         // 只在資料庫為空時插入，否則每次進來都插入會重複
         CoroutineScope(Dispatchers.IO).launch {
             val count = roomDao.getAllRoomsNow().size

@@ -5,17 +5,33 @@ package com.stevedaydream.tenantapp.ui
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.Engineering
+import androidx.compose.material.icons.filled.FlashOn
 import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material3.*
+import androidx.compose.material.icons.filled.MonetizationOn
+import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Divider
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ElevatedButton
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.stevedaydream.tenantapp.data.AppDatabase
-
-
-
 
 @Composable
 fun TenantHomeScreen(
@@ -32,7 +48,7 @@ fun TenantHomeScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("租客系統") },
+                title = { Text("租客系統", style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold)) },
                 actions = {
                     IconButton(onClick = { expanded = true }) {
                         Icon(Icons.Default.MoreVert, contentDescription = "選單")
@@ -58,68 +74,62 @@ fun TenantHomeScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
-                .padding(16.dp)
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            Text("歡迎使用租客APP", style = MaterialTheme.typography.headlineMedium)
-            // 最新公告區
+            Text(
+                "歡迎使用租客APP",
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold
+            )
+            // 優化後的公告卡片
+            Text(
+                "📢 最新公告",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold
+            )
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
             ) {
-                Column(Modifier.padding(12.dp)) {
-                    Text("📢 最新公告", style = MaterialTheme.typography.titleMedium)
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
                     if (announcements.isEmpty()) {
-                        Text("目前沒有公告")
+                        Text("目前沒有公告", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     } else {
                         announcements.take(3).forEach {
-                            Text(it.title, style = MaterialTheme.typography.bodyMedium)
-                            Text(it.content, maxLines = 2)
-                            Divider()
+                            Text(it.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                            Text(it.content, maxLines = 2, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Divider(modifier = Modifier.padding(vertical = 4.dp), color = MaterialTheme.colorScheme.outlineVariant)
                         }
                     }
                     TextButton(
                         onClick = { onNavigate("announcement") },
-                        modifier = Modifier.align(Alignment.End)
+                        modifier = Modifier
+                            .align(Alignment.End)
+                            .padding(top = 8.dp)
                     ) { Text("查看更多公告") }
                 }
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
-            Button(
+            // 優化功能按鈕，使用 ElevatedButton 和 Icon
+            ElevatedButton(
                 modifier = Modifier.fillMaxWidth(),
                 onClick = { onNavigate("home") }
             ) {
-                Text("前往填寫修繕回報")
+                Icon(Icons.Default.Engineering, contentDescription = "修繕回報", modifier = Modifier.padding(end = 8.dp))
+                Text("前往填寫修繕回報", style = MaterialTheme.typography.bodyLarge)
             }
-            // 新增這段
-            Spacer(modifier = Modifier.height(16.dp))
-            Button(
-                modifier = Modifier.fillMaxWidth(),
-                onClick = { onNavigate("contract") }   // 跳轉到合約頁面
-            ) {
-                Text("產生電子合約（PDF）")
-            }
-            Spacer(modifier = Modifier.height(16.dp))
-            Button(
-                modifier = Modifier.fillMaxWidth(),
-                onClick = { onNavigate("room_manage") }
-            ) { Text("房間資料管理") }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            Button(
+            ElevatedButton(
                 modifier = Modifier.fillMaxWidth(),
                 onClick = { onNavigate("electricity") }
-            ) { Text("電表計算頁面") }
-            Spacer(modifier = Modifier.height(16.dp))
-            Button(
-                modifier = Modifier.fillMaxWidth(),
-                onClick = { onNavigate("excel_import") }
             ) {
-                Text("匯入 Excel 資料")
+                Icon(Icons.Default.FlashOn, contentDescription = "電表計算", modifier = Modifier.padding(end = 8.dp))
+                Text("電表計算頁面", style = MaterialTheme.typography.bodyLarge)
             }
-
-
         }
     }
 }
