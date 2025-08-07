@@ -78,10 +78,10 @@ fun AppNavGraph(navController: NavHostController, db: AppDatabase) {
             RoomManageScreen(db.roomDao(), navController)
         }
         composable("electricity") {
-            ElectricityCalcScreen(db.roomDao(), db.electricMeterDao(), navController)
+            ElectricityCalcScreen(db.roomDao(), db.electricMeterDao(), navController, onNavigateToQuery = { navController.navigate("electricity_query") })
         }
         composable("announcement") {
-            AnnouncementScreen(db.announcementDao())
+            AnnouncementScreen(db.announcementDao(),onNavigateBack={navController.popBackStack()})
         }
         composable("electricity_query") {
             ElectricityQueryScreen(db.roomDao(), db.electricMeterDao(), navController)

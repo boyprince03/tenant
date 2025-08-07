@@ -20,5 +20,7 @@ interface RoomDao {
     suspend fun deleteRoom(room: RoomEntity)
     @Query("SELECT * FROM rooms WHERE landlordCode = :code")
     fun getRoomsByLandlordCode(code: String): List<RoomEntity>
-
+    // 新增此行以支援 ExcelImportScreen 中的重複檢查功能
+    @Query("SELECT * FROM rooms")
+    fun getAll(): Flow<List<RoomEntity>>
 }

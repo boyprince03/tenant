@@ -52,12 +52,18 @@ import com.stevedaydream.tenantapp.data.AppDatabase
 import com.stevedaydream.tenantapp.data.RepairReportDao
 import java.text.SimpleDateFormat
 import java.util.*
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
+import android.widget.Toast
+import androidx.compose.material.icons.filled.DocumentScanner
+import androidx.compose.material.icons.filled.FileCopy
 
 @Composable
 fun LandlordHomeScreen(
     landlordCode: String,
     onNavigate: (String) -> Unit = {}
 ) {
+    val clipboardManager = LocalClipboardManager.current
     // 取得資料庫 & DAO
     val context = LocalContext.current
     val db = AppDatabase.getDatabase(context)
@@ -114,7 +120,7 @@ fun LandlordHomeScreen(
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
+                horizontalArrangement = Arrangement.SpaceEvenly
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("您的房東序號: ", style = MaterialTheme.typography.bodyLarge)
@@ -124,11 +130,24 @@ fun LandlordHomeScreen(
                         fontWeight = FontWeight.Bold
                     )
                 }
-                IconButton(onClick = { codeVisible = !codeVisible }) {
-                    Icon(
-                        imageVector = if (codeVisible) Icons.Filled.Visibility else Icons.Filled.VisibilityOff,
-                        contentDescription = if (codeVisible) "隱藏序號" else "顯示序號"
-                    )
+                Row {
+                    IconButton(onClick = { codeVisible = !codeVisible }) {
+                        Icon(
+                            imageVector = if (codeVisible) Icons.Filled.Visibility else Icons.Filled.VisibilityOff,
+                            contentDescription = if (codeVisible) "隱藏序號" else "顯示序號"
+                        )
+                    }
+                    IconButton(
+                        onClick = {
+                            clipboardManager.setText(AnnotatedString(landlordCode))
+                            Toast.makeText(context, "序號已複製！", Toast.LENGTH_SHORT).show()
+                        }
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.FileCopy, // 或換成 Icons.Default.ContentCopy
+                            contentDescription = "複製序號"
+                        )
+                    }
                 }
             }
 

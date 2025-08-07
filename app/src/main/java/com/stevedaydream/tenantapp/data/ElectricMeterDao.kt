@@ -21,5 +21,8 @@ interface ElectricMeterDao {
     fun getAllRecords(): Flow<List<ElectricMeterRecord>>
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertOrUpdateRecords(records: List<ElectricMeterRecord>)
+    // 新增此行以支援 ExcelImportScreen 中的重複檢查功能
+    @Query("SELECT * FROM electric_meter_records")
+    fun getAll(): Flow<List<ElectricMeterRecord>>
 
 }

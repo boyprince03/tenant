@@ -13,20 +13,15 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CloudDownload
+import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.DriveFolderUpload
-import androidx.compose.material.icons.filled.Engineering
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.UploadFile
-import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Divider
 import androidx.compose.material3.ElevatedButton
@@ -47,28 +42,30 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
-import com.stevedaydream.tenantapp.data.RoomDao
-import com.stevedaydream.tenantapp.data.RoomEntity
 import com.stevedaydream.tenantapp.data.ElectricMeterDao
 import com.stevedaydream.tenantapp.data.ElectricMeterRecord
+import com.stevedaydream.tenantapp.data.RoomDao
+import com.stevedaydream.tenantapp.data.RoomEntity
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
 import jxl.Workbook
-import android.os.Environment
 import jxl.write.Label
 import jxl.write.WritableWorkbook
 import java.io.File
 import java.io.InputStream
+import android.os.Environment
 
-// 輔助函式：顯示 Toast 訊息
+// Helper function: Show a Toast message
 private fun showToast(context: Context, message: String) {
     Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
 }
 
-/** 創建房間資料 Excel 範本 */
+/** Create a room data Excel template */
 fun createRoomExcelTemplate(context: Context): String? {
     return try {
         val dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
@@ -86,7 +83,7 @@ fun createRoomExcelTemplate(context: Context): String? {
         )
         demo.forEachIndexed { r, row ->
             row.forEachIndexed { c, cell ->
-                sheet.addCell(Label(c, r+1, cell))
+                sheet.addCell(Label(c, r + 1, cell))
             }
         }
         workbook.write()
@@ -98,7 +95,7 @@ fun createRoomExcelTemplate(context: Context): String? {
     }
 }
 
-/** 創建電表度數 Excel 範本 */
+/** Create an electric meter reading Excel template */
 fun createElectricExcelTemplate(context: Context): String? {
     return try {
         val dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
@@ -116,7 +113,7 @@ fun createElectricExcelTemplate(context: Context): String? {
         )
         demo.forEachIndexed { r, row ->
             row.forEachIndexed { c, cell ->
-                sheet.addCell(Label(c, r+1, cell))
+                sheet.addCell(Label(c, r + 1, cell))
             }
         }
         workbook.write()
@@ -140,15 +137,84 @@ fun ExcelImportScreen(
     var excelUri by remember { mutableStateOf<Uri?>(null) }
     var previewRows by remember { mutableStateOf<List<Map<String, String>>>(emptyList()) }
     var message by remember { mutableStateOf("") }
-    var importType by remember { mutableStateOf("房間") } // "房間" 或 "電表"
+    var importType by remember { mutableStateOf("房間") } // "房間" or "電表"
 
-    // 1. 打開檔案選擇器
+    // Helper function to parse Excel, auto-detect type, and check for duplicates
+    suspend fun parseExcelAndDetectType(uri: Uri): Pair<List<Map<String, String>>, String?>? {
+        var inputStream: InputStream? = null
+        try {
+            inputStream = context.contentResolver.openInputStream(uri) ?: return null
+            val workbook = Workbook.getWorkbook(inputStream)
+            val sheet = workbook.getSheet(0)
+            val headers = (0 until sheet.columns).map { sheet.getCell(it, 0).contents.trim() }
+
+            // Check if headers match Room or Electric Meter format
+            val roomHeaders = listOf("房號", "租客姓名", "房型", "租金", "押金", "起租日", "結束日", "備註")
+            val meterHeaders = listOf("房號", "月份", "度數")
+
+            val detectedType = when {
+                headers.containsAll(roomHeaders) -> "房間"
+                headers.containsAll(meterHeaders) -> "電表"
+                else -> null
+            }
+
+            if (detectedType == null) {
+                workbook.close()
+                return null
+            }
+
+            val existingKeys = when (detectedType) {
+                "房間" -> roomDao.getAll().firstOrNull()?.map { it.roomNumber }?.toSet() ?: emptySet()
+                "電表" -> meterDao.getAll().firstOrNull()?.map { "${it.roomNumber}-${it.recordMonth}" }?.toSet() ?: emptySet()
+                else -> emptySet()
+            }
+
+            val result = mutableListOf<Map<String, String>>()
+            for (row in 1 until sheet.rows) {
+                val map = mutableMapOf<String, String>()
+                for (col in headers.indices) {
+                    map[headers[col]] = sheet.getCell(col, row).contents.trim()
+                }
+
+                val isDuplicate = when (detectedType) {
+                    "房間" -> map["房號"] in existingKeys
+                    "電表" -> "${map["房號"]}-${map["月份"]}" in existingKeys
+                    else -> false
+                }
+
+                if (isDuplicate) {
+                    map["重複"] = "是" // Add a flag for duplicates
+                }
+
+                result.add(map)
+            }
+            workbook.close()
+            return Pair(result, detectedType)
+        } catch (e: Exception) {
+            e.printStackTrace()
+            return null
+        } finally {
+            inputStream?.close()
+        }
+    }
+
+
+    // 1. Open file chooser
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
             excelUri = uri
-            val data = parseExcelPreview(context, uri)
-            previewRows = data
-            message = if (data.isEmpty()) "預覽失敗，請檢查檔案格式" else "預覽成功，可點擊匯入"
+            scope.launch {
+                val result = parseExcelAndDetectType(uri)
+                if (result != null) {
+                    previewRows = result.first
+                    importType = result.second ?: "房間" // Default to 房間 if type is null
+                    message = if (previewRows.isEmpty()) "預覽失敗，請檢查檔案格式或內容" else "預覽成功，已自動偵測為${importType}資料"
+                } else {
+                    message = "檔案格式不正確，請選擇房間或電表度數的範本檔案。"
+                    previewRows = emptyList()
+                    excelUri = null
+                }
+            }
         }
     }
 
@@ -173,7 +239,7 @@ fun ExcelImportScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // 匯入型態選擇
+            // Import type selection
             ElevatedCard(
                 modifier = Modifier.fillMaxWidth(),
                 elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
@@ -182,7 +248,7 @@ fun ExcelImportScreen(
                     modifier = Modifier.padding(16.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Text("選擇匯入資料型態", style = MaterialTheme.typography.titleLarge)
+                    Text("選擇匯入資料型態 (已自動偵測)", style = MaterialTheme.typography.titleLarge)
                     Spacer(Modifier.height(8.dp))
                     Divider(modifier = Modifier.padding(vertical = 8.dp))
                     Row(
@@ -190,18 +256,26 @@ fun ExcelImportScreen(
                         horizontalArrangement = Arrangement.SpaceAround
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            RadioButton(selected = importType == "房間", onClick = { importType = "房間" })
+                            RadioButton(selected = importType == "房間", onClick = {
+                                importType = "房間"
+                                previewRows = emptyList()
+                                message = ""
+                            })
                             Text("房間資料")
                         }
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            RadioButton(selected = importType == "電表", onClick = { importType = "電表" })
+                            RadioButton(selected = importType == "電表", onClick = {
+                                importType = "電表"
+                                previewRows = emptyList()
+                                message = ""
+                            })
                             Text("電表度數")
                         }
                     }
                 }
             }
 
-            // 選擇 Excel 按鈕
+            // Select Excel file button
             ElevatedButton(
                 onClick = { launcher.launch(arrayOf("application/vnd.ms-excel", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")) },
                 modifier = Modifier.fillMaxWidth()
@@ -210,7 +284,7 @@ fun ExcelImportScreen(
                 Text("選擇 Excel 檔案進行預覽", style = MaterialTheme.typography.bodyLarge)
             }
 
-            // Excel 資料預覽與匯入
+            // Excel data preview and import
             if (previewRows.isNotEmpty()) {
                 ElevatedCard(
                     modifier = Modifier.fillMaxWidth(),
@@ -218,17 +292,28 @@ fun ExcelImportScreen(
                 ) {
                     Column(modifier = Modifier.padding(16.dp)) {
                         Text("預覽資料（前5筆）", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        Text(
+                            "• 紅色標示為資料庫已存在，匯入時將跳過。",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
                         Divider(modifier = Modifier.padding(vertical = 8.dp))
                         previewRows.take(5).forEachIndexed { idx, row ->
-                            Text("${idx + 1}. ${row}", style = MaterialTheme.typography.bodyMedium)
+                            val isDuplicate = row["重複"] == "是"
+                            val displayText = "${idx + 1}. ${row.filterKeys { it != "重複" }}"
+                            Text(
+                                text = displayText,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = if (isDuplicate) MaterialTheme.colorScheme.error else Color.Unspecified
+                            )
                         }
                         Spacer(Modifier.height(16.dp))
                         ElevatedButton(
                             onClick = {
                                 scope.launch {
-                                    val result = importExcelToDb(context, previewRows, importType, roomDao, meterDao)
+                                    val result = importExcelToDb(previewRows, importType, roomDao, meterDao)
                                     message = result
-                                    // 匯入成功後清空預覽，避免重複匯入
+                                    // Clear preview after successful import
                                     if (result.startsWith("成功")) {
                                         previewRows = emptyList()
                                         excelUri = null
@@ -244,10 +329,10 @@ fun ExcelImportScreen(
                 }
             }
             if (message.isNotEmpty()) {
-                Text(message, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                Text(message, color = if (message.startsWith("檔案格式")) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
             }
 
-            // 範本下載區
+            // Template download section
             ElevatedCard(
                 modifier = Modifier.fillMaxWidth(),
                 elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
@@ -297,43 +382,18 @@ fun ExcelImportScreen(
     }
 }
 
-/** 解析Excel為List<Map>，欄位名以第一列為key */
-fun parseExcelPreview(context: Context, uri: Uri): List<Map<String, String>> {
-    val result = mutableListOf<Map<String, String>>()
-    var inputStream: InputStream? = null
-    try {
-        inputStream = context.contentResolver.openInputStream(uri) ?: return emptyList()
-        val workbook = Workbook.getWorkbook(inputStream)
-        val sheet = workbook.getSheet(0)
-        val headers = (0 until sheet.columns).map { sheet.getCell(it, 0).contents.trim() }
-        for (row in 1 until sheet.rows) {
-            val map = mutableMapOf<String, String>()
-            for (col in headers.indices) {
-                map[headers[col]] = sheet.getCell(col, row).contents.trim()
-            }
-            result.add(map)
-        }
-        workbook.close()
-    } catch (e: Exception) {
-        e.printStackTrace()
-        return emptyList()
-    } finally {
-        inputStream?.close()
-    }
-    return result
-}
-
-/** 寫入DB：自動判斷欄位對應，批量寫入 */
+/** Import data to DB, checking for duplicates */
 suspend fun importExcelToDb(
-    context: Context,
     data: List<Map<String, String>>,
     type: String,
     roomDao: RoomDao,
     meterDao: ElectricMeterDao
 ): String {
+    val nonDuplicateData = data.filter { it["重複"] != "是" }
+
     return when (type) {
         "房間" -> {
-            val rooms = data.mapNotNull { row ->
+            val newRooms = nonDuplicateData.mapNotNull { row ->
                 val roomNo = row["房號"] ?: return@mapNotNull null
                 RoomEntity(
                     roomNumber = roomNo,
@@ -346,23 +406,28 @@ suspend fun importExcelToDb(
                     rentStartDate = row["起租日"] ?: "",
                     rentEndDate = row["結束日"] ?: "",
                     landlordCode = "",
-                    rentDuration = "" // 可擴充
+                    rentDuration = ""
                 )
             }
-            roomDao.insertRooms(rooms)
-            "成功匯入 ${rooms.size} 筆房間資料"
+            if (newRooms.isNotEmpty()) {
+                roomDao.insertRooms(newRooms)
+            }
+            val skippedCount = data.size - newRooms.size
+            "成功匯入 ${newRooms.size} 筆房間資料。已跳過 $skippedCount 筆重複資料。"
         }
         "電表" -> {
-            val records = data.mapNotNull { row ->
+            val newRecords = nonDuplicateData.mapNotNull { row ->
                 val roomNo = row["房號"] ?: return@mapNotNull null
                 val month = row["月份"] ?: return@mapNotNull null
                 val value = row["度數"]?.toIntOrNull() ?: return@mapNotNull null
                 ElectricMeterRecord(roomNumber = roomNo, recordMonth = month, meterValue = value)
             }
-            meterDao.insertOrUpdateRecords(records)
-            "成功匯入 ${records.size} 筆電表資料"
+            if (newRecords.isNotEmpty()) {
+                meterDao.insertOrUpdateRecords(newRecords)
+            }
+            val skippedCount = data.size - newRecords.size
+            "成功匯入 ${newRecords.size} 筆電表資料。已跳過 $skippedCount 筆重複資料。"
         }
         else -> "型態錯誤"
     }
 }
-

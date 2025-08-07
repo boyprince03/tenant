@@ -3,21 +3,23 @@ package com.stevedaydream.tenantapp.ui
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import com.google.accompanist.flowlayout.FlowRow
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Calculate
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import com.stevedaydream.tenantapp.data.RoomDao
 import com.stevedaydream.tenantapp.data.ElectricMeterDao
-import java.text.SimpleDateFormat
-import java.util.*
+import kotlinx.coroutines.launch
+import androidx.compose.runtime.rememberCoroutineScope
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun ElectricityQueryScreen(
     roomDao: RoomDao,
@@ -26,148 +28,97 @@ fun ElectricityQueryScreen(
 ) {
     val allRooms by roomDao.getAllRooms().collectAsState(initial = emptyList())
     val allRecords by electricMeterDao.getAllRecords().collectAsState(initial = emptyList())
+
     val roomNumbers = allRooms.map { it.roomNumber }
     val months = allRecords.map { it.recordMonth }.distinct().sortedDescending()
 
-    // 狀態
     var selectedRooms by remember { mutableStateOf(roomNumbers.toSet()) }
     var selectedMonth by remember { mutableStateOf(months.firstOrNull() ?: "") }
-    var menuExpanded by remember { mutableStateOf(false) }
-    var monthExpanded by remember { mutableStateOf(false) }
+    var calculatedFees by remember { mutableStateOf(mapOf<String, Int>()) }
+    var showFeeInfoDialog by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
 
-    // 計算前月月份字串
-    fun findPrevMonth(month: String): String {
-        val sdf = SimpleDateFormat("yyyy-MM", Locale.getDefault())
-        val date = try { sdf.parse(month) } catch (_: Exception) { null }
-        if (date == null) return ""
-        val cal = Calendar.getInstance().apply { time = date }
-        cal.add(Calendar.MONTH, -1)
-        return sdf.format(cal.time)
-    }
-    val prevMonth = if (selectedMonth.isNotEmpty()) findPrevMonth(selectedMonth) else ""
-
-    // 計算各房間用電量
-    val usedMap = remember(selectedRooms, selectedMonth, allRecords) {
-        mutableMapOf<String, Int>().apply {
-            selectedRooms.forEach { roomNo ->
-                val thisMonth = allRecords.find { it.roomNumber == roomNo && it.recordMonth == selectedMonth }?.meterValue
-                val lastMonth = allRecords.find { it.roomNumber == roomNo && it.recordMonth == prevMonth }?.meterValue
-                if (thisMonth != null && lastMonth != null) {
-                    this[roomNo] = thisMonth - lastMonth
+    // 費用計算邏輯 (假設每度電費為 5 元)
+    val calculateFees: () -> Unit = {
+        val fees = mutableMapOf<String, Int>()
+        scope.launch {
+            allRecords
+                .filter { it.recordMonth == selectedMonth }
+                .groupBy { it.roomNumber }
+                .forEach { (roomNo, records) ->
+                    val currentRecord = records.firstOrNull()
+                    if (currentRecord != null) {
+                        val lastTwoRecords = electricMeterDao.getLastTwoRecords(roomNo)
+                        val previousMonthRecord = lastTwoRecords.find { it.recordMonth != selectedMonth }
+                        if (previousMonthRecord != null) {
+                            val usage = currentRecord.meterValue - previousMonthRecord.meterValue
+                            if (usage > 0) {
+                                fees[roomNo] = usage * 5 // 每度電費為 5 元
+                            } else {
+                                fees[roomNo] = 0
+                            }
+                        }
+                    }
                 }
-            }
+            calculatedFees = fees
         }
     }
-    val totalUsed = usedMap.values.sum()
 
-    // 分段台電電費（110V住家）
-    fun calcTaiPowerBill(totalKwh: Int): Int {
-        var fee = 0.0
-        val steps = listOf(
-            Pair(120, 2.10),
-            Pair(330, 3.02),
-            Pair(Int.MAX_VALUE, 4.41)
-        )
-        var remain = totalKwh
-        var last = 0
-        for ((limit, price) in steps) {
-            val stepKwh = if (limit == Int.MAX_VALUE) remain else (limit - last)
-            val use = minOf(remain, stepKwh)
-            fee += use * price
-            remain -= use
-            last = limit
-            if (remain <= 0) break
-        }
-        return fee.toInt()
-    }
-    val totalBill = calcTaiPowerBill(totalUsed)
-    val roomFeeMap = usedMap.mapValues { (room, used) ->
-        if (totalUsed > 0) (totalBill * used / totalUsed.toDouble()).toInt() else 0
-    }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("度數查詢") },
-                actions = {
-                    IconButton(onClick = { menuExpanded = true }) {
-                        Icon(Icons.Default.MoreVert, contentDescription = "選單")
+                title = { Text("電費查詢", fontWeight = FontWeight.Bold) },
+                navigationIcon = {
+                    IconButton(onClick = { navController.popBackStack() }) {
+                        Icon(Icons.Default.ArrowBack, contentDescription = "返回")
                     }
-                    DropdownMenu(
-                        expanded = menuExpanded,
-                        onDismissRequest = { menuExpanded = false }
-                    ) {
-                        DropdownMenuItem(
-                            text = { Text("首頁") },
-                            onClick = {
-                                menuExpanded = false
-                                navController.navigate("mainhome")
-                            }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("返回") },
-                            onClick = {
-                                menuExpanded = false
-                                navController.popBackStack()
-                            }
-                        )
+                },
+                actions = {
+                    IconButton(onClick = { showFeeInfoDialog = true }) {
+                        Icon(Icons.Default.Info, contentDescription = "電費資訊")
                     }
                 }
             )
         }
     ) { innerPadding ->
-        Column(Modifier.padding(innerPadding).padding(16.dp)) {
-            // 房間多選篩選器
-            Text("選擇房間：", style = MaterialTheme.typography.titleMedium)
-            FlowRow(
-                modifier = Modifier.fillMaxWidth(),
-                mainAxisSpacing = 8.dp,
-                crossAxisSpacing = 8.dp
-            ) {
-                roomNumbers.forEach { roomNo ->
-                    FilterChip(
-                        selected = selectedRooms.contains(roomNo),
-                        onClick = {
-                            selectedRooms = if (selectedRooms.contains(roomNo))
-                                selectedRooms - roomNo else selectedRooms + roomNo
-                        },
-                        label = { Text(roomNo) }
-                    )
-                }
-                if (selectedRooms.size < roomNumbers.size) {
-                    OutlinedButton(
-                        onClick = { selectedRooms = roomNumbers.toSet() },
-                        content = { Text("全選") }
-                    )
-                }
-            }
-
-            Spacer(Modifier.height(8.dp))
-
-            // 月份篩選
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("月份：", Modifier.padding(end = 8.dp))
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+                .padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            // 月份選擇
+            Text("選擇月份", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            if (months.isEmpty()) {
+                Text("無可用月份資料", color = MaterialTheme.colorScheme.error)
+            } else {
+                var expanded by remember { mutableStateOf(false) }
                 ExposedDropdownMenuBox(
-                    expanded = monthExpanded,
-                    onExpandedChange = { monthExpanded = !monthExpanded }
+                    expanded = expanded,
+                    onExpandedChange = { expanded = !expanded },
+                    modifier = Modifier.fillMaxWidth()
                 ) {
                     OutlinedTextField(
                         value = selectedMonth,
                         onValueChange = {},
                         readOnly = true,
-                        modifier = Modifier.menuAnchor().width(120.dp),
-                        label = { Text("月份") }
+                        label = { Text("月份") },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+                        modifier = Modifier.menuAnchor()
                     )
                     ExposedDropdownMenu(
-                        expanded = monthExpanded,
-                        onDismissRequest = { monthExpanded = false }
+                        expanded = expanded,
+                        onDismissRequest = { expanded = false }
                     ) {
                         months.forEach { month ->
                             DropdownMenuItem(
                                 text = { Text(month) },
                                 onClick = {
                                     selectedMonth = month
-                                    monthExpanded = false
+                                    expanded = false
                                 }
                             )
                         }
@@ -175,48 +126,97 @@ fun ElectricityQueryScreen(
                 }
             }
 
-            Spacer(Modifier.height(16.dp))
+            // 房間篩選 (FlowRow 讓卡片自動換行)
+            Text("選擇房號", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            FlowRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                roomNumbers.forEach { roomNo ->
+                    FilterChip(
+                        selected = roomNo in selectedRooms,
+                        onClick = {
+                            selectedRooms = if (roomNo in selectedRooms) {
+                                selectedRooms - roomNo
+                            } else {
+                                selectedRooms + roomNo
+                            }
+                        },
+                        label = { Text(roomNo) }
+                    )
+                }
+            }
 
-            // 電費與用電結果
-            if (selectedMonth.isNotBlank() && usedMap.isNotEmpty()) {
-                Card(
-                    Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = 12.dp)
+            // 查詢按鈕
+            ElevatedButton(
+                onClick = { calculateFees() },
+                modifier = Modifier.fillMaxWidth(),
+                enabled = selectedMonth.isNotBlank() && selectedRooms.isNotEmpty()
+            ) {
+                Icon(Icons.Default.Calculate, contentDescription = "計算電費", modifier = Modifier.padding(end = 8.dp))
+                Text("計算本月電費")
+            }
+
+            // 顯示電費結果
+            if (calculatedFees.isNotEmpty()) {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Column(Modifier.padding(16.dp)) {
-                        Text("台電分段電價計算", style = MaterialTheme.typography.titleMedium)
-                        Text("本月選取房間總用電：$totalUsed 度")
-                        Text("總電費：約 $totalBill 元", color = MaterialTheme.colorScheme.primary)
-                        Spacer(Modifier.height(8.dp))
-                        usedMap.forEach { (room, used) ->
-                            val fee = roomFeeMap[room] ?: 0
-                            Row(
-                                Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween
+                    Text("電費明細：", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                    LazyColumn(
+                        modifier = Modifier.heightIn(max = 200.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        items(calculatedFees.entries.toList().sortedBy { it.key }) { (roomNo, fee) ->
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
                             ) {
-                                Text("$room 房：$used 度")
-                                Text("電費：約 $fee 元")
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(12.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text("房號: $roomNo", style = MaterialTheme.typography.bodyLarge)
+                                    Text("電費: $fee 元", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold)
+                                }
                             }
                         }
                     }
                 }
             }
 
-            // 原有紀錄列表
-            LazyColumn {
+            // 顯示原始紀錄
+            Text("本月度數紀錄", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Divider(Modifier.padding(vertical = 4.dp))
+            LazyColumn(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
                 val showRecords = allRecords
                     .filter { it.roomNumber in selectedRooms && it.recordMonth == selectedMonth }
                     .sortedWith(compareBy({ it.roomNumber }, { it.recordMonth }))
 
                 if (showRecords.isEmpty()) {
-                    item { Text("本月查無度數資料", color = MaterialTheme.colorScheme.error) }
+                    item {
+                        Box(
+                            modifier = Modifier.fillParentMaxSize(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text("本月查無度數資料", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
                 } else {
                     items(showRecords) { record ->
                         Card(
                             Modifier
                                 .fillMaxWidth()
-                                .padding(vertical = 4.dp)
+                                .padding(vertical = 4.dp),
+                            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
                         ) {
                             Row(
                                 Modifier
@@ -224,14 +224,33 @@ fun ElectricityQueryScreen(
                                     .padding(12.dp),
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
-                                Text("房號: ${record.roomNumber}")
-                                Text("月份: ${record.recordMonth}")
-                                Text("度數: ${record.meterValue}")
+                                Text("房號: ${record.roomNumber}", style = MaterialTheme.typography.bodyLarge)
+                                Text("度數: ${record.meterValue}", style = MaterialTheme.typography.bodyLarge)
                             }
                         }
                     }
                 }
             }
         }
+    }
+
+    if (showFeeInfoDialog) {
+        AlertDialog(
+            onDismissRequest = { showFeeInfoDialog = false },
+            title = { Text("電費計算說明") },
+            text = {
+                Column {
+                    Text("電費計算方式如下：")
+                    Spacer(Modifier.height(8.dp))
+                    Text("本月電費 = (本月度數 - 上月度數) * 每度電費")
+                    Text("目前設定的每度電費為：\$5 元", fontWeight = FontWeight.Bold)
+                }
+            },
+            confirmButton = {
+                Button(onClick = { showFeeInfoDialog = false }) {
+                    Text("了解")
+                }
+            }
+        )
     }
 }

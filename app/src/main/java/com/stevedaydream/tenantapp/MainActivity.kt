@@ -39,7 +39,7 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             val navController = rememberNavController()
-            AppNavGraph(navController, db)
+            AppNavGraph(navController, db, )
         }
     }
 }
