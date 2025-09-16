@@ -1,3 +1,4 @@
+// ui/ElectricityCalcViewModel.kt
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.stevedaydream.tenantapp.data.ElectricMeterDao
@@ -19,7 +20,7 @@ class ElectricityCalcViewModel(
     private val meterDao: ElectricMeterDao
 ) : ViewModel() {
 
-    // 1. UI State
+    // 1. UI State (保持不變)
     data class UiState(
         val currentMonth: String = SimpleDateFormat("yyyy-MM", Locale.getDefault()).format(Date()),
         val showMonthPicker: Boolean = false,
@@ -47,41 +48,42 @@ class ElectricityCalcViewModel(
             roomDao.getAllRooms().collect { rooms ->
                 _uiState.update { it.copy(roomList = rooms) }
                 // 房間列表變動時，重新載入當前月份資料
-                loadInitialDataForCurrentMonth(_uiState.value.currentMonth)
+                loadDataForMonth(_uiState.value.currentMonth)
             }
         }
     }
 
     /**
-     * 載入指定月份的資料庫紀錄和計算結果。
-     * 此函式只在 ViewModel 啟動或成功儲存後呼叫。
+     * 【核心修正】載入指定月份的資料庫紀錄和計算結果。
      *
      * @param month 要載入的月份，格式為 "yyyy-MM"。
      */
-    private fun loadInitialDataForCurrentMonth(month: String) {
+    private fun loadDataForMonth(month: String) {
         viewModelScope.launch {
             val rooms = _uiState.value.roomList
-            val records = rooms.mapNotNull { room -> meterDao.getRecord(room.roomNumber, month) }
+            // 取得本月已儲存的紀錄
+            val recordsForMonth = rooms.mapNotNull { room -> meterDao.getRecord(room.roomNumber, month) }
 
-            // 根據資料庫紀錄初始化 meterMap 和 lockedRoomMap
+            // 初始化UI顯示的度數和鎖定狀態
             val meterMapForLoadedMonth = rooms.associate { room ->
-                val record = records.find { it.roomNumber == room.roomNumber }
+                val record = recordsForMonth.find { it.roomNumber == room.roomNumber }
                 room.roomNumber to (record?.meterValue?.toString() ?: "")
             }.toMutableMap()
             val lockedRoomMapForLoadedMonth = rooms.associate { room ->
-                room.roomNumber to (records.any { it.roomNumber == room.roomNumber })
-            }.toMutableMap()
+                room.roomNumber to (recordsForMonth.any { it.roomNumber == room.roomNumber })
+            }
 
-            // 計算用電度數和費用
+            // 【邏輯修正】精確計算用電度數和費用
             val used = mutableMapOf<String, Int>()
             val fees = mutableMapOf<String, Float>()
-            rooms.forEach { room ->
-                val lastTwo = meterDao.getLastTwoRecords(room.roomNumber)
-                if (lastTwo.size >= 2) {
-                    val curr = lastTwo.find { it.recordMonth == month }?.meterValue
-                    val prev = lastTwo.find { it.recordMonth != month }?.meterValue
-                    if (curr != null && prev != null) {
-                        val usedVal = curr - prev
+            for (room in rooms) {
+                val currentRecord = recordsForMonth.find { it.roomNumber == room.roomNumber }
+                // 使用新的DAO方法精確查找上個月的紀錄
+                val previousRecord = meterDao.getPreviousRecord(room.roomNumber, month)
+
+                if (currentRecord != null && previousRecord != null) {
+                    val usedVal = currentRecord.meterValue - previousRecord.meterValue
+                    if(usedVal >= 0){
                         used[room.roomNumber] = usedVal
                         fees[room.roomNumber] = usedVal * ELECTRICITY_RATE
                     }
@@ -109,18 +111,17 @@ class ElectricityCalcViewModel(
         }
     }
 
+
     /**
-     * 更新月份狀態並重置 UI 輸入。
-     * 此函式用於處理月份切換，不觸發資料庫載入。
-     *
-     * @param newMonth 新的月份，格式為 "yyyy-MM"。
+     * 【流程優化】更新月份狀態並立即重新載入資料。
      */
-    private fun _updateMonthAndResetState(newMonth: String) {
+    private fun changeMonth(newMonth: String) {
         if (newMonth != _uiState.value.currentMonth) {
             _uiState.update {
                 it.copy(
                     currentMonth = newMonth,
                     showMonthPicker = false,
+                    // 重置輸入與計算結果，準備顯示新月份的資料
                     meterMap = emptyMap(),
                     lockedRoomMap = emptyMap(),
                     usedMap = emptyMap(),
@@ -130,12 +131,15 @@ class ElectricityCalcViewModel(
                     messageType = MessageType.Info
                 )
             }
+            // 立即為新月份載入資料
+            loadDataForMonth(newMonth)
         } else {
             _uiState.update { it.copy(showMonthPicker = false) }
         }
     }
 
-    // 2. 月份選擇事件
+
+    // 2. 月份選擇事件 (UI觸發)
     fun onShowMonthPicker() {
         _uiState.update { it.copy(showMonthPicker = true) }
     }
@@ -146,7 +150,7 @@ class ElectricityCalcViewModel(
 
     fun onMonthSelected(year: Int, month: Int) {
         val selectedMonth = String.format("%04d-%02d", year, month + 1)
-        _updateMonthAndResetState(selectedMonth)
+        changeMonth(selectedMonth)
     }
 
     fun onPreviousMonth() {
@@ -158,7 +162,7 @@ class ElectricityCalcViewModel(
         }
         cal.add(Calendar.MONTH, -1)
         val newMonth = monthFormatter.format(cal.time)
-        _updateMonthAndResetState(newMonth)
+        changeMonth(newMonth)
     }
 
     fun onNextMonth() {
@@ -170,15 +174,17 @@ class ElectricityCalcViewModel(
         }
         cal.add(Calendar.MONTH, 1)
         val newMonth = monthFormatter.format(cal.time)
-        _updateMonthAndResetState(newMonth)
+        changeMonth(newMonth)
     }
 
-    // 3. 輸入/鎖定事件
+    // 3. 輸入/鎖定事件 (保持不變)
     fun onMeterValueChange(roomNumber: String, value: String) {
         val newMeterMap = _uiState.value.meterMap.toMutableMap()
-        newMeterMap[roomNumber] = value
-        val canSave = newMeterMap.any { (_, v) -> v.toIntOrNull() != null && v.isNotBlank() }
-        _uiState.update { it.copy(meterMap = newMeterMap, canSave = canSave) }
+        newMeterMap[roomNumber] = value.filter { it.isDigit() } // 只允許數字
+        val canSaveNow = newMeterMap.any { (room, v) ->
+            !(_uiState.value.lockedRoomMap[room] ?: false) && v.isNotBlank() && v.toIntOrNull() != null
+        }
+        _uiState.update { it.copy(meterMap = newMeterMap, canSave = canSaveNow) }
     }
 
     fun onLockToggle(roomNumber: String) {
@@ -186,18 +192,7 @@ class ElectricityCalcViewModel(
         val isLocked = newLockedMap[roomNumber] == true
         newLockedMap[roomNumber] = !isLocked
 
-        val newMeterMap = _uiState.value.meterMap.toMutableMap()
-        if (isLocked) { // 如果是從鎖定變為解鎖
-            newMeterMap[roomNumber] = "" // 清空輸入，讓用戶重新輸入
-        }
-        val canSave = newMeterMap.any { (_, v) -> v.toIntOrNull() != null && v.isNotBlank() }
-        _uiState.update {
-            it.copy(
-                lockedRoomMap = newLockedMap,
-                meterMap = newMeterMap,
-                canSave = canSave
-            )
-        }
+        _uiState.update { it.copy(lockedRoomMap = newLockedMap) }
     }
 
     // 4. 儲存並計算
@@ -208,36 +203,58 @@ class ElectricityCalcViewModel(
             val meterMap = _uiState.value.meterMap
 
             val recordsToSave = mutableListOf<ElectricMeterRecord>()
+            var hasInvalidInput = false
             rooms.forEach { room ->
-                if (_uiState.value.lockedRoomMap[room.roomNumber] == true) return@forEach
-                val meterValueStr = meterMap[room.roomNumber]
-                val v = meterValueStr?.toIntOrNull()
-                if (v != null && meterValueStr.isNotBlank()) {
-                    recordsToSave.add(
-                        ElectricMeterRecord(
-                            roomNumber = room.roomNumber,
-                            recordMonth = currentMonth,
-                            meterValue = v
-                        )
-                    )
+                // 只處理未鎖定的房間
+                if (_uiState.value.lockedRoomMap[room.roomNumber] != true) {
+                    val meterValueStr = meterMap[room.roomNumber]
+                    if (!meterValueStr.isNullOrBlank()) {
+                        val v = meterValueStr.toIntOrNull()
+                        if (v != null) {
+                            // 【邏輯修正】檢查度數是否小於上期
+                            val previousRecord = meterDao.getPreviousRecord(room.roomNumber, currentMonth)
+                            if (previousRecord != null && v < previousRecord.meterValue) {
+                                hasInvalidInput = true
+                                // 可以在此處設定更詳細的錯誤訊息
+                                _uiState.update { it.copy(message = "${room.roomNumber}房度數不可小於上期", messageType = MessageType.Error) }
+                                return@launch
+                            }
+
+                            recordsToSave.add(
+                                ElectricMeterRecord(
+                                    roomNumber = room.roomNumber,
+                                    recordMonth = currentMonth,
+                                    meterValue = v
+                                )
+                            )
+                        } else {
+                            hasInvalidInput = true
+                        }
+                    }
                 }
             }
+
+            if(hasInvalidInput){
+                _uiState.update { it.copy(message = "請輸入有效的數字", messageType = MessageType.Error) }
+                return@launch
+            }
+
 
             if (recordsToSave.isNotEmpty()) {
                 meterDao.insertOrUpdateRecords(recordsToSave)
                 _uiState.update {
                     it.copy(
-                        message = "成功儲存${recordsToSave.size}筆",
+                        message = "成功儲存 ${recordsToSave.size} 筆",
                         messageType = MessageType.Success
                     )
                 }
                 // 儲存成功後，重新載入該月份資料以更新預覽區塊和鎖定狀態
-                loadInitialDataForCurrentMonth(currentMonth)
+                loadDataForMonth(currentMonth)
             } else {
                 _uiState.update {
                     it.copy(
-                        message = "請輸入有效數字",
-                        messageType = MessageType.Error
+                        message = "沒有可儲存的新度數",
+                        messageType = MessageType.Info
                     )
                 }
             }

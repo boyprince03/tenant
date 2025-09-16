@@ -1,3 +1,4 @@
+// ui/ElectricityQueryScreen.kt
 package com.stevedaydream.tenantapp.ui
 
 import androidx.compose.foundation.layout.*
@@ -38,29 +39,36 @@ fun ElectricityQueryScreen(
     var showFeeInfoDialog by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
-    // 費用計算邏輯 (假設每度電費為 5 元)
     val calculateFees: () -> Unit = {
-        val fees = mutableMapOf<String, Int>()
         scope.launch {
-            allRecords
-                .filter { it.recordMonth == selectedMonth }
-                .groupBy { it.roomNumber }
-                .forEach { (roomNo, records) ->
-                    val currentRecord = records.firstOrNull()
-                    if (currentRecord != null) {
-                        val lastTwoRecords = electricMeterDao.getLastTwoRecords(roomNo)
-                        val previousMonthRecord = lastTwoRecords.find { it.recordMonth != selectedMonth }
-                        if (previousMonthRecord != null) {
-                            val usage = currentRecord.meterValue - previousMonthRecord.meterValue
-                            if (usage > 0) {
-                                fees[roomNo] = usage * 5 // 每度電費為 5 元
-                            } else {
-                                fees[roomNo] = 0
-                            }
-                        }
+            val fees = mutableMapOf<String, Int>()
+            val roomsToCalculate = allRooms.filter { it.roomNumber in selectedRooms }
+
+            for (room in roomsToCalculate) {
+                val currentRecord = electricMeterDao.getRecord(room.roomNumber, selectedMonth)
+                val previousRecord = electricMeterDao.getPreviousRecord(room.roomNumber, selectedMonth)
+
+                if (currentRecord != null && previousRecord != null) {
+                    val usage = currentRecord.meterValue - previousRecord.meterValue
+                    if (usage >= 0) {
+                        fees[room.roomNumber] = usage * 5
+                    } else {
+                        fees[room.roomNumber] = 0
                     }
+                } else {
+                    fees[room.roomNumber] = 0
                 }
+            }
             calculatedFees = fees
+        }
+    }
+
+    LaunchedEffect(months, selectedRooms) {
+        if (selectedMonth.isBlank() && months.isNotEmpty()) {
+            selectedMonth = months.first()
+        }
+        if (selectedMonth.isNotBlank()) {
+            calculateFees()
         }
     }
 
@@ -119,6 +127,7 @@ fun ElectricityQueryScreen(
                                 onClick = {
                                     selectedMonth = month
                                     expanded = false
+                                    calculateFees()
                                 }
                             )
                         }
@@ -126,13 +135,25 @@ fun ElectricityQueryScreen(
                 }
             }
 
-            // 房間篩選 (FlowRow 讓卡片自動換行)
+            // 房間篩選
             Text("選擇房號", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             FlowRow(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
+                FilterChip(
+                    selected = selectedRooms.size == roomNumbers.size,
+                    onClick = {
+                        selectedRooms = if (selectedRooms.size == roomNumbers.size) {
+                            emptySet()
+                        } else {
+                            roomNumbers.toSet()
+                        }
+                        calculateFees()
+                    },
+                    label = { Text("全選") }
+                )
                 roomNumbers.forEach { roomNo ->
                     FilterChip(
                         selected = roomNo in selectedRooms,
@@ -142,20 +163,11 @@ fun ElectricityQueryScreen(
                             } else {
                                 selectedRooms + roomNo
                             }
+                            calculateFees()
                         },
                         label = { Text(roomNo) }
                     )
                 }
-            }
-
-            // 查詢按鈕
-            ElevatedButton(
-                onClick = { calculateFees() },
-                modifier = Modifier.fillMaxWidth(),
-                enabled = selectedMonth.isNotBlank() && selectedRooms.isNotEmpty()
-            ) {
-                Icon(Icons.Default.Calculate, contentDescription = "計算電費", modifier = Modifier.padding(end = 8.dp))
-                Text("計算本月電費")
             }
 
             // 顯示電費結果
@@ -169,20 +181,25 @@ fun ElectricityQueryScreen(
                         modifier = Modifier.heightIn(max = 200.dp),
                         verticalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
-                        items(calculatedFees.entries.toList().sortedBy { it.key }) { (roomNo, fee) ->
-                            Card(
-                                modifier = Modifier.fillMaxWidth(),
-                                elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
-                            ) {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(12.dp),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
+                        // 【*** 這裡是本次修正的重點 ***】
+                        items(calculatedFees.entries.toList().sortedBy { it.key }) { entry ->
+                            val roomNo = entry.key
+                            val fee = entry.value
+                            if(roomNo in selectedRooms){
+                                Card(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
                                 ) {
-                                    Text("房號: $roomNo", style = MaterialTheme.typography.bodyLarge)
-                                    Text("電費: $fee 元", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold)
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(12.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text("房號: $roomNo", style = MaterialTheme.typography.bodyLarge)
+                                        Text("電費: $fee 元", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold)
+                                    }
                                 }
                             }
                         }
