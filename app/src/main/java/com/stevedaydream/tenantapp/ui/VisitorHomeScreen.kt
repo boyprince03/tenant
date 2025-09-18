@@ -3,11 +3,11 @@ package com.stevedaydream.tenantapp.ui
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.FlashOn
@@ -59,7 +59,6 @@ fun VisitorHomeScreen(
     var menuExpanded by remember { mutableStateOf(false) }
 
     Scaffold(
-        // 上方導航列保持不變，但標題字體更為突出
         topBar = {
             TopAppBar(
                 title = {
@@ -102,11 +101,10 @@ fun VisitorHomeScreen(
             modifier = Modifier
                 .padding(innerPadding)
                 .fillMaxSize()
+                .verticalScroll(rememberScrollState()) // 【核心修改】加入這行使其可以捲動
                 .padding(horizontal = 16.dp, vertical = 8.dp),
-            // 使用 spacedBy 統一間距
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // 優化「最新公告」區塊的標題與卡片
             Text(
                 "📢 最新公告",
                 style = MaterialTheme.typography.headlineSmall,
@@ -142,7 +140,6 @@ fun VisitorHomeScreen(
                 }
             }
 
-            // 優化「可租房間」區塊的標題與卡片
             Text(
                 "🏠 可租房間",
                 style = MaterialTheme.typography.headlineSmall,
@@ -169,7 +166,6 @@ fun VisitorHomeScreen(
                     }
                 }
             } else {
-                // 使用 forEach 迴圈建立多個精緻的房間卡片
                 availableRooms.forEach {
                     Card(
                         modifier = Modifier.fillMaxWidth(),
@@ -192,7 +188,6 @@ fun VisitorHomeScreen(
                 }
             }
 
-            // 使用 ElevatedButton 增加視覺效果，並加入 Icon
             ElevatedButton(
                 onClick = {
                     val user = LoginState.currentUser
@@ -200,20 +195,18 @@ fun VisitorHomeScreen(
                         onNavigate("login")
                     } else {
                         if (user.role == "tenant") {
-                            onNavigate("tenant_electricity")
+                            onNavigate("electricity/tenant")
                         } else if (user.role == "landlord") {
-                            onNavigate("landlord_electricity")
+                            onNavigate("electricity/landlord")
                         }
                     }
                 },
                 modifier = Modifier.fillMaxWidth()
             ) {
-                // 優化按鈕的 Icon 和文字排版
                 Icon(Icons.Default.FlashOn, contentDescription = "查詢電費", modifier = Modifier.padding(end = 8.dp))
                 Text("查詢當月電費", style = MaterialTheme.typography.bodyLarge)
             }
 
-            // 使用 ElevatedButton 增加視覺效果，並加入 Icon
             ElevatedButton(
                 onClick = {
                     val user = LoginState.currentUser
@@ -229,7 +222,6 @@ fun VisitorHomeScreen(
                 },
                 modifier = Modifier.fillMaxWidth()
             ) {
-                // 優化按鈕的 Icon 和文字排版
                 Icon(Icons.Default.MonetizationOn, contentDescription = "我要繳費", modifier = Modifier.padding(end = 8.dp))
                 Text("我要繳費", style = MaterialTheme.typography.bodyLarge)
             }

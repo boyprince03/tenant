@@ -1,6 +1,7 @@
 // ui/ElectricityCalcViewModel.kt
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.lifecycle.ViewModelProvider
 import com.stevedaydream.tenantapp.data.ElectricMeterDao
 import com.stevedaydream.tenantapp.data.ElectricMeterRecord
 import com.stevedaydream.tenantapp.data.RoomDao
@@ -15,13 +16,33 @@ import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 
+
+
+// 【核心修改】ViewModel Factory，用於傳遞 userRole
+class ElectricityCalcViewModelFactory(
+    private val roomDao: RoomDao,
+    private val meterDao: ElectricMeterDao,
+    private val userRole: String // 新增 userRole
+) : ViewModelProvider.Factory {
+    override fun <T : ViewModel> create(modelClass: Class<T>): T {
+        if (modelClass.isAssignableFrom(ElectricityCalcViewModel::class.java)) {
+            @Suppress("UNCHECKED_CAST")
+            return ElectricityCalcViewModel(roomDao, meterDao, userRole) as T
+        }
+        throw IllegalArgumentException("Unknown ViewModel class")
+    }
+}
+
+// 【核心修改】ViewModel 建構子接收 userRole
 class ElectricityCalcViewModel(
     private val roomDao: RoomDao,
-    private val meterDao: ElectricMeterDao
+    private val meterDao: ElectricMeterDao,
+    private val userRole: String
 ) : ViewModel() {
 
-    // 1. UI State (保持不變)
+    // 【核心修改】在 UiState 中新增 isEditEnabled 欄位
     data class UiState(
+        val isEditEnabled: Boolean = true, // 新增：控制是否可編輯
         val currentMonth: String = SimpleDateFormat("yyyy-MM", Locale.getDefault()).format(Date()),
         val showMonthPicker: Boolean = false,
         val roomList: List<RoomEntity> = emptyList(),
@@ -34,6 +55,7 @@ class ElectricityCalcViewModel(
         val messageType: MessageType = MessageType.Info
     )
 
+
     enum class MessageType { Success, Error, Info }
 
     private val _uiState = MutableStateFlow(UiState())
@@ -43,11 +65,12 @@ class ElectricityCalcViewModel(
     private val ELECTRICITY_RATE = 5.0f
 
     init {
-        // 監聽房間資料變動並在啟動時載入
+        // 【核心修改】初始化時根據 userRole 設定 isEditEnabled
+        _uiState.update { it.copy(isEditEnabled = (userRole == "landlord")) }
+
         viewModelScope.launch {
             roomDao.getAllRooms().collect { rooms ->
                 _uiState.update { it.copy(roomList = rooms) }
-                // 房間列表變動時，重新載入當前月份資料
                 loadDataForMonth(_uiState.value.currentMonth)
             }
         }

@@ -2,6 +2,7 @@
 package com.stevedaydream.tenantapp.ui
 
 import ElectricityCalcViewModel
+import ElectricityCalcViewModelFactory
 import android.app.DatePickerDialog
 import android.view.View
 import androidx.compose.foundation.background
@@ -33,21 +34,6 @@ import java.text.SimpleDateFormat
 import java.util.*
 
 
-// ViewModel Factory 用於提供帶有依賴的 ViewModel
-class ElectricityCalcViewModelFactory(
-    private val roomDao: RoomDao,
-    private val meterDao: ElectricMeterDao
-) : androidx.lifecycle.ViewModelProvider.Factory {
-    override fun <T : androidx.lifecycle.ViewModel> create(modelClass: Class<T>): T {
-        if (modelClass.isAssignableFrom(ElectricityCalcViewModel::class.java)) {
-            @Suppress("UNCHECKED_CAST")
-            return ElectricityCalcViewModel(roomDao, meterDao) as T
-        }
-        throw IllegalArgumentException("Unknown ViewModel class")
-    }
-}
-
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ElectricityCalcScreen(
@@ -55,12 +41,15 @@ fun ElectricityCalcScreen(
     meterDao: ElectricMeterDao,
     navController: NavHostController,
     onNavigateToQuery: () -> Unit,
-    viewModel: ElectricityCalcViewModel = viewModel(
-        factory = ElectricityCalcViewModelFactory(roomDao, meterDao)
-    )
+    userRole: String // 新增接收 userRole
 ) {
     val context = LocalContext.current
+    // 【核心修改】建立 ViewModel 時傳入 userRole
+    val viewModel: ElectricityCalcViewModel = viewModel(
+        factory = ElectricityCalcViewModelFactory(roomDao, meterDao, userRole)
+    )
     val uiState by viewModel.uiState.collectAsState()
+
 
     // --- 月曆 Dialog 控制 ---
     if (uiState.showMonthPicker) {
@@ -68,7 +57,8 @@ fun ElectricityCalcScreen(
         try {
             val monthFormatter = SimpleDateFormat("yyyy-MM", Locale.getDefault())
             cal.time = monthFormatter.parse(uiState.currentMonth) ?: Date()
-        } catch (_: Exception) {}
+        } catch (_: Exception) {
+        }
         DatePickerDialog(
             context,
             { _, y, m, _ ->
@@ -132,11 +122,16 @@ fun ElectricityCalcScreen(
                     modifier = Modifier.padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    Text("輸入各房號本月度數", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                    Text(
+                        if (uiState.isEditEnabled) "輸入各房號本月度數" else "各房號本月度數",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
                     if (uiState.roomList.isEmpty()) {
                         Text("請先新增房間資料", color = MaterialTheme.colorScheme.error)
                     } else {
                         RoomMeterInputList(
+                            isEditEnabled = uiState.isEditEnabled, // 傳入編輯狀態
                             roomList = uiState.roomList,
                             meterMap = uiState.meterMap,
                             lockedRoomMap = uiState.lockedRoomMap,
@@ -145,74 +140,87 @@ fun ElectricityCalcScreen(
                         )
                     }
                     Spacer(modifier = Modifier.height(8.dp))
-                    ElevatedButton(
-                        onClick = { viewModel.saveAndCalculate() },
-                        modifier = Modifier.fillMaxWidth(),
-                        enabled = uiState.canSave
-                    ) {
-                        Icon(Icons.Default.Save, contentDescription = "儲存", modifier = Modifier.padding(end = 8.dp))
-                        Text("儲存並計算")
-                    }
-                }
-            }
-
-            Spacer(Modifier.height(16.dp))
-            // 預覽區
-            if (uiState.usedMap.isNotEmpty()) {
-                ElevatedCard(
-                    modifier = Modifier.fillMaxWidth(),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-                ) {
-                    Column(
-                        modifier = Modifier.padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Text("各房間本月用電與費用：", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                        uiState.usedMap.forEach { (roomNo, used) ->
-                            val fee = uiState.feeMap[roomNo] ?: 0.0f
-                            Text("$roomNo 房：$used 度 / 約 $fee 元", style = MaterialTheme.typography.bodyLarge)
+                    // 【核心修改】只有在可編輯模式下才顯示儲存按鈕
+                    if (uiState.isEditEnabled) {
+                        ElevatedButton(
+                            onClick = { viewModel.saveAndCalculate() },
+                            modifier = Modifier.fillMaxWidth(),
+                            enabled = uiState.canSave
+                        ) {
+                            Icon(
+                                Icons.Default.Save,
+                                contentDescription = "儲存",
+                                modifier = Modifier.padding(end = 8.dp)
+                            )
+                            Text("儲存並計算")
                         }
                     }
                 }
-            } else {
-                Text(
-                    "尚未輸入或計算本月電費資料。",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = MaterialTheme.typography.bodyLarge,
-                    fontWeight = FontWeight.Medium,
-                    modifier = Modifier.padding(16.dp)
-                )
-            }
 
-            Spacer(Modifier.height(8.dp))
-            OutlinedButton(
-                onClick = onNavigateToQuery,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("前往電費查詢頁面")
-            }
+                Spacer(Modifier.height(16.dp))
+                // 預覽區
+                if (uiState.usedMap.isNotEmpty()) {
+                    ElevatedCard(
+                        modifier = Modifier.fillMaxWidth(),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(
+                                "各房間本月用電與費用：",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            uiState.usedMap.forEach { (roomNo, used) ->
+                                val fee = uiState.feeMap[roomNo] ?: 0.0f
+                                Text(
+                                    "$roomNo 房：$used 度 / 約 $fee 元",
+                                    style = MaterialTheme.typography.bodyLarge
+                                )
+                            }
+                        }
+                    }
+                } else {
+                    Text(
+                        "尚未輸入或計算本月電費資料。",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.Medium,
+                        modifier = Modifier.padding(16.dp)
+                    )
+                }
 
-            // 訊息提示
-            if (uiState.message.isNotEmpty()) {
-                Text(
-                    text = uiState.message,
-                    color = when (uiState.messageType) {
-                        ElectricityCalcViewModel.MessageType.Success -> MaterialTheme.colorScheme.primary
-                        ElectricityCalcViewModel.MessageType.Error -> MaterialTheme.colorScheme.error
-                        ElectricityCalcViewModel.MessageType.Info -> MaterialTheme.colorScheme.onSurfaceVariant
-                    },
-                    style = MaterialTheme.typography.bodyLarge,
-                    fontWeight = FontWeight.Medium,
-                    modifier = Modifier.padding(top = 16.dp)
-                )
+                Spacer(Modifier.height(8.dp))
+                OutlinedButton(
+                    onClick = onNavigateToQuery,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("前往電費查詢頁面")
+                }
+
+                // 訊息提示
+                if (uiState.message.isNotEmpty()) {
+                    Text(
+                        text = uiState.message,
+                        color = when (uiState.messageType) {
+                            ElectricityCalcViewModel.MessageType.Success -> MaterialTheme.colorScheme.primary
+                            ElectricityCalcViewModel.MessageType.Error -> MaterialTheme.colorScheme.error
+                            ElectricityCalcViewModel.MessageType.Info -> MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.Medium,
+                        modifier = Modifier.padding(top = 16.dp)
+                    )
+                }
             }
         }
     }
 }
-
-
 @Composable
 fun RoomMeterInputList(
+    isEditEnabled: Boolean, // 新增：接收是否可編輯的狀態
     roomList: List<com.stevedaydream.tenantapp.data.RoomEntity>,
     meterMap: Map<String, String>,
     lockedRoomMap: Map<String, Boolean>,
@@ -233,30 +241,33 @@ fun RoomMeterInputList(
                     value = meterMap[room.roomNumber] ?: "",
                     onValueChange = { newValue -> onValueChange(room.roomNumber, newValue) },
                     label = { Text("房號 ${room.roomNumber} 度數") },
-                    modifier = Modifier
-                        .weight(1f)
-                        .then(
-                            if (locked) Modifier.background(MaterialTheme.colorScheme.surfaceVariant)
-                            else Modifier
-                        ),
+                    modifier = Modifier.weight(1f),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    enabled = !locked,
+                    // 【核心修改】根據 isEditEnabled 和 locked 狀態決定是否啟用
+                    enabled = isEditEnabled && !locked,
+                    readOnly = !isEditEnabled, // 房客模式設為唯讀
                     singleLine = true,
                     isError = meterMap[room.roomNumber]?.toIntOrNull() == null &&
                             !meterMap[room.roomNumber].isNullOrBlank()
                 )
-                Spacer(Modifier.width(8.dp))
-                TextButton(
-                    onClick = { onLockToggle(room.roomNumber) },
-                    colors = ButtonDefaults.textButtonColors(
-                        contentColor = if (locked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary
-                    )
-                ) {
-                    Text(if (locked) "解鎖" else "鎖定")
+                // 【核心修改】只有在可編輯模式下才顯示鎖定/解鎖按鈕
+                if (isEditEnabled) {
+                    Spacer(Modifier.width(8.dp))
+                    TextButton(
+                        onClick = { onLockToggle(room.roomNumber) },
+                        colors = ButtonDefaults.textButtonColors(
+                            contentColor = if (locked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary
+                        )
+                    ) {
+                        Text(if (locked) "解鎖" else "鎖定")
+                    }
                 }
             }
         }
     }
 }
+
+
+
 
 // 移除 MonthPickerField，因為功能已整合到 TopAppBar

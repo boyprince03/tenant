@@ -12,7 +12,7 @@ import androidx.room.RoomDatabase
         Announcement::class,
         User::class,
                ],
-    version = 7, // 資料庫升級
+    version = 10, // 資料庫升級
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {

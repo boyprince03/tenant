@@ -11,5 +11,7 @@ data class User(
     val phone: String,
     val idNumber: String,
     val role: String,
-    val landlordCode: String? = null // 新增房東序號
+    val landlordCode: String? = null, // 房東自己的序號
+    var boundRoomNumber: String? = null, // 租客綁定的房號
+    var boundLandlordCode: String? = null // 租客綁定的房東序號
 )

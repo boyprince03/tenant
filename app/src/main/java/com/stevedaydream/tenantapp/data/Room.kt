@@ -7,6 +7,7 @@ import androidx.room.PrimaryKey
 data class RoomEntity(
     @PrimaryKey(autoGenerate = false) val roomNumber: String,
     val tenantName: String = "",         // 租客姓名
+    val tenantId: Int? = null,           // <-- 新增此行
     val type: String = "",               // 房型
     val note: String = "",               // 備註
     val rentAmount: Int = 0,             // 租金
@@ -15,5 +16,5 @@ data class RoomEntity(
     val rentStartDate: String = "",      // 租賃開始日期 yyyy-MM-dd
     val rentEndDate: String = "",        // 租賃結束日期 yyyy-MM-dd
     val rentDuration: String = "",        // 租賃期間（如："1年" 或 "12個月"）
-    val landlordCode: String // 新增
+    var landlordCode: String? = null      // 【核心修改】改為可選，並設為 var
 )

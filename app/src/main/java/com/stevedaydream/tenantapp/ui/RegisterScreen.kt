@@ -37,8 +37,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.UUID
-
-
+import com.stevedaydream.tenantapp.data.AppDatabase
+import kotlinx.coroutines.flow.first // 【核心修改】確保此行 import 存在
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -55,10 +55,9 @@ fun RegisterScreen(
     var role by remember { mutableStateOf("tenant") }
     var errorMsg by remember { mutableStateOf("") }
 
-
-
-
     val context = LocalContext.current
+    val db = AppDatabase.getDatabase(context)
+    val roomDao = db.roomDao()
 
     Scaffold(
         topBar = { TopAppBar(title = { Text("") },
@@ -130,23 +129,31 @@ fun RegisterScreen(
                         if (exists != null) {
                             withContext(Dispatchers.Main) { errorMsg = "帳號已存在" }
                         } else {
-                            // 在房東註冊時自動產生 landlordCode
                             val landlordCode =
-                                if (role == "landlord") UUID.randomUUID().toString().take(8)
-                                    .uppercase() else null
-                            userDao.insert(
-                                User(
-                                    username = username,
-                                    password = password,
-                                    phone = phone,
-                                    idNumber = idNumber,
-                                    role = role,
-                                    landlordCode = landlordCode
-                                )
+                                if (role == "landlord") UUID.randomUUID().toString().take(8).uppercase()
+                                else null
+
+                            val newUser = User(
+                                username = username,
+                                password = password,
+                                phone = phone,
+                                idNumber = idNumber,
+                                role = role,
+                                landlordCode = landlordCode
                             )
+                            userDao.insert(newUser)
+
+                            if (role == "landlord" && landlordCode != null) {
+                                val landlordCount = userDao.getAllLandlords().first().size
+                                if (landlordCount == 1) {
+                                    val unassignedRooms = roomDao.getRoomsByLandlordCode(null)
+                                    val updatedRooms = unassignedRooms.map { it.copy(landlordCode = landlordCode) }
+                                    roomDao.insertRooms(updatedRooms)
+                                }
+                            }
+
                             if (role == "landlord" && landlordCode != null) {
                                 withContext(Dispatchers.Main) {
-                                    // 彈窗提示房東序號
                                     Toast.makeText(
                                         context,
                                         "註冊成功！你的房東序號：$landlordCode",
@@ -159,14 +166,10 @@ fun RegisterScreen(
                                     onRegisterSuccess()
                                 }
                             }
-
                         }
-
                     }
                 }, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
             ) { Text("註冊") }
         }
-
-
     }
 }

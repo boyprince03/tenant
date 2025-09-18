@@ -65,7 +65,9 @@ private fun showToast(context: Context, message: String) {
     Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
 }
 
-/** Create a room data Excel template */
+/** * 【核心修改】Create a room data Excel template
+ * - 新增「房屋狀態」和「租賃期間」欄位
+ */
 fun createRoomExcelTemplate(context: Context): String? {
     return try {
         val dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
@@ -73,13 +75,16 @@ fun createRoomExcelTemplate(context: Context): String? {
         val workbook: WritableWorkbook = Workbook.createWorkbook(file)
         val sheet = workbook.createSheet("Sheet1", 0)
 
-        val headers = listOf("房號", "租客姓名", "房型", "租金", "押金", "起租日", "結束日", "備註")
+        // 更新 Headers
+        val headers = listOf("房號", "租客姓名", "房型", "租金", "押金", "房屋狀態", "起租日", "結束日", "租賃期間", "備註")
         headers.forEachIndexed { i, header ->
             sheet.addCell(Label(i, 0, header))
         }
+        // 更新 Demo Data
         val demo = listOf(
-            listOf("401", "張三", "雅房", "6000", "12000", "2024-07-01", "2025-06-30", ""),
-            listOf("402", "李四", "套房", "8500", "17000", "2024-08-01", "2025-07-31", "頂樓加蓋")
+            listOf("401", "張三", "雅房", "6000", "12000", "出租中", "2024-07-01", "2025-06-30", "1年", ""),
+            listOf("402", "李四", "套房", "8500", "17000", "出租中", "2024-08-01", "2025-07-31", "1年", "頂樓加蓋"),
+            listOf("501", "", "雅房", "5500", "11000", "可租", "", "", "", "")
         )
         demo.forEachIndexed { r, row ->
             row.forEachIndexed { c, cell ->
@@ -95,7 +100,7 @@ fun createRoomExcelTemplate(context: Context): String? {
     }
 }
 
-/** Create an electric meter reading Excel template */
+/** Create an electric meter reading Excel template (此部分不需修改) */
 fun createElectricExcelTemplate(context: Context): String? {
     return try {
         val dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
@@ -148,12 +153,13 @@ fun ExcelImportScreen(
             val sheet = workbook.getSheet(0)
             val headers = (0 until sheet.columns).map { sheet.getCell(it, 0).contents.trim() }
 
-            // Check if headers match Room or Electric Meter format
-            val roomHeaders = listOf("房號", "租客姓名", "房型", "租金", "押金", "起租日", "結束日", "備註")
+            // 【核心修改】更新房間資料的 Headers
+            val roomHeaders = listOf("房號", "租客姓名", "房型", "租金", "押金", "房屋狀態", "起租日", "結束日", "租賃期間", "備註")
             val meterHeaders = listOf("房號", "月份", "度數")
 
             val detectedType = when {
-                headers.containsAll(roomHeaders) -> "房間"
+                // 使用 containsAll 確保所有必要欄位都存在，允許 Excel 有多餘欄位
+                headers.containsAll(listOf("房號", "租客姓名", "房型", "租金")) -> "房間"
                 headers.containsAll(meterHeaders) -> "電表"
                 else -> null
             }
@@ -344,7 +350,8 @@ fun ExcelImportScreen(
                     }
                     Divider(modifier = Modifier.padding(vertical = 8.dp))
                     Text(
-                        "• 房間資料需欄位：房號、租客姓名、房型、租金、押金、起租日、結束日、備註\n" +
+                        // 【核心修改】更新說明文字
+                        "• 房間資料需欄位：房號、租客姓名、房型、租金、押金、房屋狀態、起租日、結束日、租賃期間、備註\n" +
                                 "• 電表度數需欄位：房號、月份、度數",
                         style = MaterialTheme.typography.bodyMedium
                     )
@@ -382,7 +389,9 @@ fun ExcelImportScreen(
     }
 }
 
-/** Import data to DB, checking for duplicates */
+/** * 【核心修改】Import data to DB, checking for duplicates
+ * - 新增 status 和 rentDuration 欄位
+ */
 suspend fun importExcelToDb(
     data: List<Map<String, String>>,
     type: String,
@@ -402,11 +411,11 @@ suspend fun importExcelToDb(
                     note = row["備註"] ?: "",
                     rentAmount = row["租金"]?.toIntOrNull() ?: 0,
                     deposit = row["押金"]?.toIntOrNull() ?: 0,
-                    status = "",
+                    status = row["房屋狀態"] ?: "可租", // 新增
                     rentStartDate = row["起租日"] ?: "",
                     rentEndDate = row["結束日"] ?: "",
-                    landlordCode = "",
-                    rentDuration = ""
+                    rentDuration = row["租賃期間"] ?: "", // 新增
+                    landlordCode = "" // 保持原有邏輯，landlordCode 之後再綁定
                 )
             }
             if (newRooms.isNotEmpty()) {

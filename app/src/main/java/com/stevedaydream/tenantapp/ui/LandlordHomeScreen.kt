@@ -14,21 +14,25 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.DocumentScanner
 import androidx.compose.material.icons.filled.Engineering
+import androidx.compose.material.icons.filled.FileCopy
 import androidx.compose.material.icons.filled.FlashOn
 import androidx.compose.material.icons.filled.Groups
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Logout
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.NoteAdd
 import androidx.compose.material.icons.filled.PointOfSale
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
-import androidx.compose.material.icons.filled.Home
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Divider
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ElevatedButton
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -44,26 +48,23 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import android.widget.Toast
 import com.stevedaydream.tenantapp.data.AppDatabase
-import com.stevedaydream.tenantapp.data.RepairReportDao
 import java.text.SimpleDateFormat
 import java.util.*
-import androidx.compose.ui.platform.LocalClipboardManager
-import androidx.compose.ui.text.AnnotatedString
-import android.widget.Toast
-import androidx.compose.material.icons.filled.DocumentScanner
-import androidx.compose.material.icons.filled.FileCopy
 
 @Composable
 fun LandlordHomeScreen(
     landlordCode: String,
-    onNavigate: (String) -> Unit = {}
+    onNavigate: (String) -> Unit = {},
+    onLogout: () -> Unit // 新增登出回呼
 ) {
     val clipboardManager = LocalClipboardManager.current
-    // 取得資料庫 & DAO
     val context = LocalContext.current
     val db = AppDatabase.getDatabase(context)
     val announcementDao = db.announcementDao()
@@ -78,7 +79,6 @@ fun LandlordHomeScreen(
         else code.take(2) + "*".repeat(code.length - 4) + code.takeLast(2)
     }
 
-    // 日期格式化工具
     val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.TAIWAN)
 
 
@@ -101,7 +101,15 @@ fun LandlordHomeScreen(
                                 onNavigate("history")
                             }
                         )
-                        // 可以繼續加選單項目
+                        // 【核心修改】新增登出按鈕
+                        DropdownMenuItem(
+                            text = { Text("登出") },
+                            leadingIcon = { Icon(Icons.Default.Logout, contentDescription = "登出")},
+                            onClick = {
+                                expanded = false
+                                onLogout()
+                            }
+                        )
                     }
                 }
             )
@@ -143,7 +151,7 @@ fun LandlordHomeScreen(
                         }
                     ) {
                         Icon(
-                            imageVector = Icons.Default.FileCopy, // 或換成 Icons.Default.ContentCopy
+                            imageVector = Icons.Default.FileCopy,
                             contentDescription = "複製序號"
                         )
                     }
@@ -182,7 +190,7 @@ fun LandlordHomeScreen(
                 }
             }
 
-            // 優化後的修繕回報區塊，顯示更詳細的資訊
+            // 優化後的修繕回報區塊
             Text(
                 "🛠️ 最新修繕回報",
                 style = MaterialTheme.typography.titleLarge,
@@ -197,7 +205,6 @@ fun LandlordHomeScreen(
                     if (repairReports.isEmpty()) {
                         Text("目前沒有新的修繕回報", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     } else {
-                        // 顯示最新的三筆修繕回報，並包含日期和詳細資訊
                         repairReports.take(3).forEach { report ->
                             Column(Modifier.fillMaxWidth()) {
                                 Text(
@@ -261,7 +268,7 @@ fun LandlordHomeScreen(
             }
             ElevatedButton(
                 modifier = Modifier.fillMaxWidth(),
-                onClick = { onNavigate("electricity") }
+                onClick = { onNavigate("electricity/landlord") }
             ) {
                 Icon(Icons.Default.FlashOn, contentDescription = "電表計算頁面", modifier = Modifier.padding(end = 8.dp))
                 Text("電表計算頁面", style = MaterialTheme.typography.bodyLarge)

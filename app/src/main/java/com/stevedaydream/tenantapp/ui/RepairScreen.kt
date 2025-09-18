@@ -3,6 +3,7 @@ package com.stevedaydream.tenantapp.ui
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -26,6 +27,11 @@ fun RepairScreen(navController: NavHostController, dao: RepairReportDao) {
         topBar = {
             TopAppBar(
                 title = { Text("填寫修繕回報") },
+                navigationIcon = {
+                    IconButton(onClick = { navController.popBackStack() }) {
+                        Icon(Icons.Default.ArrowBack, contentDescription = "返回")
+                    }
+                },
                 actions = {
                     IconButton(onClick = { expanded = true }) {
                         Icon(Icons.Default.MoreVert, contentDescription = "選單")

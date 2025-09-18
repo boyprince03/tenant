@@ -18,8 +18,11 @@ interface RoomDao {
     fun getAllRoomsNow(): List<RoomEntity>
     @Delete
     suspend fun deleteRoom(room: RoomEntity)
+
+    // 【核心修改】將 "code: String" 改為 "code: String?"，允許傳入 null
     @Query("SELECT * FROM rooms WHERE landlordCode = :code")
-    fun getRoomsByLandlordCode(code: String): List<RoomEntity>
+    fun getRoomsByLandlordCode(code: String?): List<RoomEntity>
+
     // 新增此行以支援 ExcelImportScreen 中的重複檢查功能
     @Query("SELECT * FROM rooms")
     fun getAll(): Flow<List<RoomEntity>>

@@ -7,6 +7,9 @@ interface UserDao {
     @Insert
     suspend fun insert(user: User)
 
+    @Update
+    suspend fun updateUser(user: User)
+
     @Query("SELECT * FROM users WHERE username = :username AND password = :password")
     suspend fun login(username: String, password: String): User?
 
@@ -15,4 +18,8 @@ interface UserDao {
 
     @Query("SELECT * FROM users WHERE id = :id LIMIT 1")
     suspend fun getUserById(id: Int): User?
+
+    // --- 新增此方法 ---
+    @Query("SELECT * FROM users WHERE role = 'landlord'")
+    fun getAllLandlords(): Flow<List<User>>
 }

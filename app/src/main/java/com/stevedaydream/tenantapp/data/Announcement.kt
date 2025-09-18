@@ -8,5 +8,6 @@ data class Announcement(
     @PrimaryKey(autoGenerate = true) val id: Int = 0,
     val title: String,
     val content: String,
-    val date: Long = System.currentTimeMillis()
+    val date: Long = System.currentTimeMillis(),
+    val landlordCode: String? = null // 新增此行，null 代表全域公告
 )

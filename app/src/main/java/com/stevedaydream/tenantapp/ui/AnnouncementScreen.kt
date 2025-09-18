@@ -12,10 +12,11 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Edit
@@ -31,6 +32,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -44,9 +46,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.stevedaydream.tenantapp.data.Announcement
 import com.stevedaydream.tenantapp.data.AnnouncementDao
+import com.stevedaydream.tenantapp.data.User
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -56,20 +58,39 @@ import java.util.Locale
 @Composable
 fun AnnouncementScreen(
     dao: AnnouncementDao,
-    onNavigateBack: () -> Unit // 新增返回導航的回調函式
+    onNavigateBack: () -> Unit,
+    currentUser: User?, // 傳入當前使用者
+    landlordCode: String? // 傳入房東 Code
 ) {
-    val announcements by dao.getAll().collectAsState(initial = emptyList())
+    // 根據使用者角色判斷是否有編輯權限
+    val canEdit = currentUser?.role == "landlord" || currentUser?.role == "admin" // 假設有 admin 角色
+
+    // 根據使用者角色和綁定的房東 Code 決定要看哪些公告
+    val announcements by remember(currentUser?.boundLandlordCode) {
+        when {
+            // 房客：看全域公告和自己房東的公告
+            currentUser?.role == "tenant" && currentUser.boundLandlordCode != null ->
+                dao.getGlobalAndByLandlordCode(currentUser.boundLandlordCode!!)
+            // 房東：看全域公告和自己的公告
+            currentUser?.role == "landlord" && currentUser.landlordCode != null ->
+                dao.getGlobalAndByLandlordCode(currentUser.landlordCode)
+            // 預設或訪客：看所有公告
+            else -> dao.getAll()
+        }
+    }.collectAsState(initial = emptyList())
+
+
     val scope = rememberCoroutineScope()
-    var showDialog by remember { mutableStateOf(false) }
+    var showEditDialog by remember { mutableStateOf(false) }
+    var showDetailDialog by remember { mutableStateOf<Announcement?>(null) } // 用來顯示詳細內容的 Dialog
     var editing: Announcement? by remember { mutableStateOf(null) }
 
-    // 日期格式化工具
     val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("最新公告管理", fontWeight = FontWeight.Bold) },
+                title = { Text("最新公告", fontWeight = FontWeight.Bold) },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "返回")
@@ -78,15 +99,18 @@ fun AnnouncementScreen(
             )
         },
         floatingActionButton = {
-            ElevatedButton(
-                onClick = {
-                    editing = null
-                    showDialog = true
-                },
-                modifier = Modifier.padding(16.dp)
-            ) {
-                Icon(Icons.Default.Add, contentDescription = "新增公告", modifier = Modifier.padding(end = 8.dp))
-                Text("新增公告")
+            // 只有房東和管理員能看到新增按鈕
+            if (canEdit) {
+                ElevatedButton(
+                    onClick = {
+                        editing = null
+                        showEditDialog = true
+                    },
+                    modifier = Modifier.padding(16.dp)
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = "新增公告", modifier = Modifier.padding(end = 8.dp))
+                    Text("新增公告")
+                }
             }
         }
     ) { innerPadding ->
@@ -118,8 +142,8 @@ fun AnnouncementScreen(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clickable {
-                                    editing = ann
-                                    showDialog = true
+                                    // 點擊卡片，打開詳細內容 Dialog
+                                    showDetailDialog = ann
                                 },
                             elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
                         ) {
@@ -154,11 +178,40 @@ fun AnnouncementScreen(
         }
     }
 
-    if (showDialog) {
+    // 詳細內容 Dialog
+    if (showDetailDialog != null) {
+        AlertDialog(
+            onDismissRequest = { showDetailDialog = null },
+            title = { Text(showDetailDialog!!.title, fontWeight = FontWeight.Bold) },
+            text = {
+                Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                    Text(showDetailDialog!!.content, style = MaterialTheme.typography.bodyLarge)
+                }
+            },
+            confirmButton = {
+                Button(onClick = { showDetailDialog = null }) { Text("關閉") }
+            },
+            dismissButton = {
+                // 只有房東且是自己發的公告，或管理員才能編輯
+                val canEditThis = canEdit && (showDetailDialog!!.landlordCode == landlordCode || showDetailDialog!!.landlordCode == null)
+                if (canEditThis) {
+                    TextButton(onClick = {
+                        editing = showDetailDialog
+                        showDetailDialog = null
+                        showEditDialog = true
+                    }) { Text("編輯") }
+                }
+            }
+        )
+    }
+
+
+    // 編輯/新增 Dialog
+    if (showEditDialog) {
         var title by remember { mutableStateOf(editing?.title ?: "") }
         var content by remember { mutableStateOf(editing?.content ?: "") }
         AlertDialog(
-            onDismissRequest = { showDialog = false },
+            onDismissRequest = { showEditDialog = false },
             title = { Text(if (editing == null) "新增公告" else "編輯公告", fontWeight = FontWeight.Bold) },
             text = {
                 Column(
@@ -186,11 +239,12 @@ fun AnnouncementScreen(
                     onClick = {
                         scope.launch {
                             if (editing == null) {
-                                dao.insert(Announcement(title = title, content = content))
+                                // 新增時，寫入 landlordCode
+                                dao.insert(Announcement(title = title, content = content, landlordCode = landlordCode))
                             } else {
                                 dao.update(editing!!.copy(title = title, content = content))
                             }
-                            showDialog = false
+                            showEditDialog = false
                         }
                     },
                     enabled = title.isNotBlank() && content.isNotBlank()
@@ -204,14 +258,14 @@ fun AnnouncementScreen(
                         Button(
                             onClick = {
                                 scope.launch { dao.delete(editing!!) }
-                                showDialog = false
+                                showEditDialog = false
                             }
                         ) {
                             Icon(Icons.Default.Delete, contentDescription = "刪除", modifier = Modifier.padding(end = 4.dp))
                             Text("刪除")
                         }
                     }
-                    Button(onClick = { showDialog = false }) {
+                    Button(onClick = { showEditDialog = false }) {
                         Text("取消")
                     }
                 }

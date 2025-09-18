@@ -8,6 +8,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Engineering
 import androidx.compose.material.icons.filled.FlashOn
+import androidx.compose.material.icons.filled.HomeWork
+import androidx.compose.material.icons.filled.Logout
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.MonetizationOn
 import androidx.compose.material3.Button
@@ -32,16 +34,38 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.stevedaydream.tenantapp.data.AppDatabase
+import com.stevedaydream.tenantapp.data.User
+import kotlinx.coroutines.launch
 
 @Composable
 fun TenantHomeScreen(
-    onNavigate: (String) -> Unit = {}
+    userId: Int,
+    onNavigate: (String) -> Unit = {},
+    onLogout: () -> Unit // 新增登出回呼
 ) {
-    // 取得資料庫 & DAO
     val context = LocalContext.current
     val db = AppDatabase.getDatabase(context)
+    val userDao = db.userDao()
     val announcementDao = db.announcementDao()
-    val announcements by announcementDao.getAll().collectAsState(initial = emptyList())
+
+    var currentUser by remember { mutableStateOf<User?>(null) }
+    val scope = rememberCoroutineScope()
+
+    LaunchedEffect(userId) {
+        scope.launch {
+            currentUser = userDao.getUserById(userId)
+        }
+    }
+
+    val announcements by remember(currentUser?.boundLandlordCode) {
+        val code = currentUser?.boundLandlordCode
+        if (code != null) {
+            announcementDao.getGlobalAndByLandlordCode(code)
+        } else {
+            announcementDao.getGlobalAndByLandlordCode("")
+        }
+    }.collectAsState(initial = emptyList())
+
 
     var expanded by remember { mutableStateOf(false) }
 
@@ -64,7 +88,15 @@ fun TenantHomeScreen(
                                 onNavigate("history")
                             }
                         )
-                        // 可以繼續加選單項目
+                        // 【核心修改】新增登出按鈕
+                        DropdownMenuItem(
+                            text = { Text("登出") },
+                            leadingIcon = { Icon(Icons.Default.Logout, contentDescription = "登出")},
+                            onClick = {
+                                expanded = false
+                                onLogout()
+                            }
+                        )
                     }
                 }
             )
@@ -78,7 +110,7 @@ fun TenantHomeScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             Text(
-                "歡迎使用租客APP",
+                "歡迎！ ${currentUser?.username ?: ""}",
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold
             )
@@ -107,7 +139,7 @@ fun TenantHomeScreen(
                         }
                     }
                     TextButton(
-                        onClick = { onNavigate("announcement") },
+                        onClick = { onNavigate("announcement/${currentUser?.id ?: 0}") },
                         modifier = Modifier
                             .align(Alignment.End)
                             .padding(top = 8.dp)
@@ -115,7 +147,14 @@ fun TenantHomeScreen(
                 }
             }
 
-            // 優化功能按鈕，使用 ElevatedButton 和 Icon
+            ElevatedButton(
+                modifier = Modifier.fillMaxWidth(),
+                onClick = { onNavigate("select_room/$userId") }
+            ) {
+                Icon(Icons.Default.HomeWork, contentDescription = "綁定房間", modifier = Modifier.padding(end = 8.dp))
+                Text("綁定房東及房間", style = MaterialTheme.typography.bodyLarge)
+            }
+
             ElevatedButton(
                 modifier = Modifier.fillMaxWidth(),
                 onClick = { onNavigate("home") }
@@ -125,7 +164,7 @@ fun TenantHomeScreen(
             }
             ElevatedButton(
                 modifier = Modifier.fillMaxWidth(),
-                onClick = { onNavigate("electricity") }
+                onClick = { onNavigate("electricity/tenant") }
             ) {
                 Icon(Icons.Default.FlashOn, contentDescription = "電表計算", modifier = Modifier.padding(end = 8.dp))
                 Text("電表計算頁面", style = MaterialTheme.typography.bodyLarge)
