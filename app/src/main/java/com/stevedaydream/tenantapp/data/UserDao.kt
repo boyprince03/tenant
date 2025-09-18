@@ -19,7 +19,10 @@ interface UserDao {
     @Query("SELECT * FROM users WHERE id = :id LIMIT 1")
     suspend fun getUserById(id: Int): User?
 
-    // --- 新增此方法 ---
     @Query("SELECT * FROM users WHERE role = 'landlord'")
     fun getAllLandlords(): Flow<List<User>>
+
+    // --- 新增此方法 ---
+    @Query("SELECT * FROM users WHERE landlordCode = :code AND role = 'landlord' LIMIT 1")
+    suspend fun getLandlordByCode(code: String): User?
 }

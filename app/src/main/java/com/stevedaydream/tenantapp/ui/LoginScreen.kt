@@ -3,13 +3,12 @@ package com.stevedaydream.tenantapp.ui
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
 import com.stevedaydream.tenantapp.data.User
 import com.stevedaydream.tenantapp.data.UserDao
@@ -30,27 +29,33 @@ fun LoginScreen(
     var username by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var errorMsg by remember { mutableStateOf("") }
-    val context = LocalContext.current
-
-
-
 
     Scaffold(
-        topBar = { TopAppBar(title = { Text("") },
-            actions = {
-                IconButton(onClick = { navController.popBackStack() }) {
-                    Icon(Icons.Default.ArrowBack, contentDescription = "返回")
+        topBar = {
+            TopAppBar(
+                title = { Text("登入") },
+                // 【核心修改】將按鈕移至 navigationIcon，並修改點擊事件
+                navigationIcon = {
+                    IconButton(onClick = {
+                        navController.navigate("visitor_home") {
+                            // 清除返回堆疊，避免回到登入頁
+                            popUpTo(navController.graph.findStartDestination().id)
+                        }
+                    }) {
+                        Icon(Icons.Default.ArrowBack, contentDescription = "返回首頁")
+                    }
                 }
-            }
-        ) }
+            )
+        }
     ) { innerPadding ->
         Column(
             Modifier
                 .fillMaxSize()
+                .padding(innerPadding) // 使用 Scaffold 提供的 padding
                 .padding(32.dp),
             verticalArrangement = Arrangement.Center
         ) {
-            Text("登入", style = MaterialTheme.typography.headlineMedium)
+            // 移除 headline，因為 TopAppBar 已經有標題
             OutlinedTextField(
                 value = username, onValueChange = { username = it }, label = { Text("帳號") }, modifier = Modifier.fillMaxWidth()
             )
@@ -60,7 +65,6 @@ fun LoginScreen(
             if (errorMsg.isNotBlank()) Text(errorMsg, color = MaterialTheme.colorScheme.error)
             Button(
                 onClick = {
-                    // Room查詢應該用Coroutine
                     CoroutineScope(Dispatchers.IO).launch {
                         val user = userDao.login(username, password)
                         if (user != null) {

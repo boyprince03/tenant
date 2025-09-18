@@ -38,7 +38,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.UUID
 import com.stevedaydream.tenantapp.data.AppDatabase
-import kotlinx.coroutines.flow.first // 【核心修改】確保此行 import 存在
+import kotlinx.coroutines.flow.first
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -147,7 +147,13 @@ fun RegisterScreen(
                                 val landlordCount = userDao.getAllLandlords().first().size
                                 if (landlordCount == 1) {
                                     val unassignedRooms = roomDao.getRoomsByLandlordCode(null)
-                                    val updatedRooms = unassignedRooms.map { it.copy(landlordCode = landlordCode) }
+                                    // 【核心修改】在綁定房間時，一併將狀態設定為 "可租"
+                                    val updatedRooms = unassignedRooms.map {
+                                        it.copy(
+                                            landlordCode = landlordCode,
+                                            status = "可租"
+                                        )
+                                    }
                                     roomDao.insertRooms(updatedRooms)
                                 }
                             }

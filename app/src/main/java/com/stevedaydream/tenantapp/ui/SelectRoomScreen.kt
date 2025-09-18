@@ -13,6 +13,7 @@ import com.stevedaydream.tenantapp.data.AppDatabase
 import com.stevedaydream.tenantapp.data.RoomEntity
 import com.stevedaydream.tenantapp.data.User
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -27,35 +28,33 @@ fun SelectRoomScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
-    // 從資料庫獲取所有房東列表
-    val landlords by userDao.getAllLandlords().collectAsState(initial = emptyList())
-    // 儲存選定房東的可租房間
+    var landlordCodeInput by remember { mutableStateOf("") }
+    // 【核心修改】用一個列表來儲存查詢結果，可以是多個或單個
+    var landlordList by remember { mutableStateOf<List<User>>(emptyList()) }
+    var errorMsg by remember { mutableStateOf("") }
+
+    // 以下三個狀態用於房間選擇對話框
     var availableRooms by remember { mutableStateOf<List<RoomEntity>>(emptyList()) }
-    // 控制房間選擇對話框的顯示
     var showRoomSelectionDialog by remember { mutableStateOf(false) }
-    // 儲存目前點擊的房東
     var selectedLandlord by remember { mutableStateOf<User?>(null) }
 
-    // 當 showRoomSelectionDialog 和 selectedLandlord 狀態改變時觸發
+    // 房間選擇對話框 (邏輯不變)
     if (showRoomSelectionDialog && selectedLandlord != null) {
         RoomSelectionDialog(
             rooms = availableRooms,
             onDismiss = { showRoomSelectionDialog = false },
             onRoomSelected = { room ->
                 scope.launch {
-                    val currentUser = withContext(Dispatchers.IO) {
-                        userDao.getUserById(userId)
-                    }
+                    val currentUser = withContext(Dispatchers.IO) { userDao.getUserById(userId) }
                     if (currentUser != null) {
-                        // 1. 更新使用者資料
                         currentUser.boundLandlordCode = room.landlordCode
                         currentUser.boundRoomNumber = room.roomNumber
                         userDao.updateUser(currentUser)
 
-                        // 2. 更新房間資料
                         val updatedRoom = room.copy(
                             tenantId = userId,
-                            tenantName = currentUser.username
+                            tenantName = currentUser.username,
+                            status = "出租中"
                         )
                         roomDao.insertRoom(updatedRoom)
 
@@ -73,39 +72,87 @@ fun SelectRoomScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(16.dp),
+            .padding(32.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        Text("請選擇房東以查看可租房間", style = MaterialTheme.typography.headlineSmall)
+        Text("請輸入房東序號或留空查詢", style = MaterialTheme.typography.headlineMedium)
+        OutlinedTextField(
+            value = landlordCodeInput,
+            onValueChange = {
+                landlordCodeInput = it
+                errorMsg = ""
+                landlordList = emptyList() // 清除上次的搜尋結果
+            },
+            label = { Text("房東序號 (留空可查全部)") },
+            modifier = Modifier.fillMaxWidth()
+        )
+        if (errorMsg.isNotBlank()) Text(errorMsg, color = MaterialTheme.colorScheme.error)
 
-        LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            items(landlords) { landlord ->
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable {
-                            scope.launch {
-                                // 查找該房東所有尚未被綁定的房間
-                                val allRooms = withContext(Dispatchers.IO) {
-                                    roomDao.getRoomsByLandlordCode(landlord.landlordCode ?: "")
-                                }
-                                val filteredRooms = allRooms.filter { it.tenantId == null || it.tenantId == userId }
+        Button(
+            onClick = {
+                scope.launch {
+                    // 【核心修改】重寫查詢邏輯
+                    if (landlordCodeInput.isNotBlank()) {
+                        // 情況1: 輸入序號，精準查詢
+                        val foundLandlord = withContext(Dispatchers.IO) {
+                            userDao.getLandlordByCode(landlordCodeInput)
+                        }
+                        if (foundLandlord == null) {
+                            errorMsg = "查無此房東序號"
+                            landlordList = emptyList()
+                        } else {
+                            landlordList = listOf(foundLandlord)
+                        }
+                    } else {
+                        // 情況2: 未輸入序號，查詢全部
+                        val allLandlords = withContext(Dispatchers.IO) {
+                            userDao.getAllLandlords().first()
+                        }
+                        if (allLandlords.isEmpty()) {
+                            errorMsg = "目前沒有任何房東"
+                            landlordList = emptyList()
+                        } else {
+                            landlordList = allLandlords
+                        }
+                    }
+                }
+            },
+            modifier = Modifier.fillMaxWidth()
+        ) { Text("查詢房東") }
 
-                                if (filteredRooms.isEmpty()) {
-                                    withContext(Dispatchers.Main) {
-                                        Toast.makeText(context, "此房東目前無可租房間", Toast.LENGTH_SHORT).show()
+        // 【核心修改】用 LazyColumn 顯示查詢結果列表
+        if (landlordList.isNotEmpty()) {
+            Spacer(Modifier.height(16.dp))
+            Text("查詢結果", style = MaterialTheme.typography.titleMedium)
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(landlordList) { landlord ->
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                scope.launch {
+                                    val allRooms = withContext(Dispatchers.IO) {
+                                        roomDao.getRoomsByLandlordCode(landlord.landlordCode ?: "")
                                     }
-                                } else {
-                                    selectedLandlord = landlord
-                                    availableRooms = filteredRooms
-                                    showRoomSelectionDialog = true
+                                    val filteredRooms = allRooms.filter {
+                                        it.status == "可租" && (it.tenantId == null || it.tenantId == userId)
+                                    }
+                                    if (filteredRooms.isEmpty()) {
+                                        withContext(Dispatchers.Main) {
+                                            Toast.makeText(context, "此房東目前無可租房間", Toast.LENGTH_SHORT).show()
+                                        }
+                                    } else {
+                                        selectedLandlord = landlord
+                                        availableRooms = filteredRooms
+                                        showRoomSelectionDialog = true
+                                    }
                                 }
                             }
+                    ) {
+                        Column(Modifier.padding(16.dp)) {
+                            Text("房東: ${landlord.username}", style = MaterialTheme.typography.titleMedium)
+                            Text("電話: ${landlord.phone}", style = MaterialTheme.typography.bodyMedium)
                         }
-                ) {
-                    Column(Modifier.padding(16.dp)) {
-                        Text("房東: ${landlord.username}", style = MaterialTheme.typography.titleMedium)
-                        Text("電話: ${landlord.phone}", style = MaterialTheme.typography.bodyMedium)
                     }
                 }
             }
