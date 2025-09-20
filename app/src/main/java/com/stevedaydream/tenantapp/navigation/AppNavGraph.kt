@@ -1,5 +1,6 @@
 package com.stevedaydream.tenantapp.navigation
 
+// ... (imports保持不變)
 import SelectRoomScreen
 import androidx.compose.runtime.Composable
 import androidx.navigation.NavHostController
@@ -23,14 +24,15 @@ import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavType
 import androidx.navigation.navArgument
 import com.stevedaydream.tenantapp.data.User
+import com.stevedaydream.tenantapp.ui.TenantPaymentScreen
 
 import com.stevedaydream.tenantapp.ui.VisitorHomeScreen
 import kotlinx.coroutines.launch
 
-
 @Composable
 fun AppNavGraph(navController: NavHostController, db: AppDatabase) {
     NavHost(navController, startDestination = "visitor_home") {
+        // ... (login, register, etc. 保持不變)
         composable("login") {
             LoginScreen(
                 onLoginSuccess = { user ->
@@ -60,24 +62,23 @@ fun AppNavGraph(navController: NavHostController, db: AppDatabase) {
             TenantHomeScreen(
                 userId = userId,
                 onNavigate = { navController.navigate(it) },
-                // 【核心修改】傳入登出邏輯
                 onLogout = {
                     navController.navigate("login") {
-                        popUpTo(0) // 清除所有返回堆疊
+                        popUpTo(0)
                     }
                 }
             )
         }
+
         composable("landlord_home/{userId}") { backStackEntry ->
             val userId = backStackEntry.arguments?.getString("userId")?.toIntOrNull() ?: 0
             LandlordHomeScreenWrapper(
                 userId = userId,
                 db = db,
                 onNavigate = { navController.navigate(it) },
-                // 【核心修改】傳入登出邏輯
                 onLogout = {
                     navController.navigate("login") {
-                        popUpTo(0) // 清除所有返回堆疊
+                        popUpTo(0)
                     }
                 }
             )
@@ -100,9 +101,18 @@ fun AppNavGraph(navController: NavHostController, db: AppDatabase) {
         composable("contract") {
             ContractPreviewScreen(navController)
         }
-        composable("room_manage") {
-            RoomManageScreen(db.roomDao(), navController)
+        composable(
+            "room_manage/{userId}",
+            arguments = listOf(navArgument("userId") { type = NavType.IntType })
+        ) { backStackEntry ->
+            val userId = backStackEntry.arguments?.getInt("userId") ?: 0
+            RoomManageScreen(
+                userId = userId,
+                db = db,
+                navController = navController
+            )
         }
+
         composable(
             "electricity/{userRole}",
             arguments = listOf(navArgument("userRole") { type = NavType.StringType })
@@ -112,7 +122,8 @@ fun AppNavGraph(navController: NavHostController, db: AppDatabase) {
                 roomDao = db.roomDao(),
                 meterDao = db.electricMeterDao(),
                 navController = navController,
-                onNavigateToQuery = { navController.navigate("electricity_query") },
+                // 【*** 核心修改 ***】將 userId 傳遞到電費計算頁，雖然此頁沒用到，但為了讓它能導航到查詢頁
+                onNavigateToQuery = { userId -> navController.navigate("electricity_query/$userId") },
                 userRole = userRole
             )
         }
@@ -134,9 +145,16 @@ fun AppNavGraph(navController: NavHostController, db: AppDatabase) {
                 landlordCode = if (user?.role == "landlord") user?.landlordCode else null
             )
         }
-        composable("electricity_query") {
-            ElectricityQueryScreen(db.roomDao(), db.electricMeterDao(), navController)
+
+        // --- 【*** 核心修改：修改此路由 ***】 ---
+        composable(
+            "electricity_query/{userId}",
+            arguments = listOf(navArgument("userId") { type = NavType.IntType })
+        ) { backStackEntry ->
+            val userId = backStackEntry.arguments?.getInt("userId") ?: 0
+            ElectricityQueryScreen(userId, db, navController)
         }
+
         composable("excel_import") {
             ExcelImportScreen(db.roomDao(), db.electricMeterDao(), navController)
         }
@@ -151,14 +169,26 @@ fun AppNavGraph(navController: NavHostController, db: AppDatabase) {
                 onNavigateBack = { navController.popBackStack() }
             )
         }
+        composable(
+            "tenant_payment/{userId}",
+            arguments = listOf(navArgument("userId") { type = NavType.IntType })
+        ) { backStackEntry ->
+            val userId = backStackEntry.arguments?.getInt("userId") ?: 0
+            TenantPaymentScreen(
+                userId = userId,
+                db = db,
+                navController = navController
+            )
+        }
     }
 }
+
 @Composable
 fun LandlordHomeScreenWrapper(
     userId: Int,
     db: AppDatabase,
     onNavigate: (String) -> Unit,
-    onLogout: () -> Unit // 新增登出回呼
+    onLogout: () -> Unit
 ) {
     var user by remember { mutableStateOf<User?>(null) }
     val scope = rememberCoroutineScope()
@@ -171,15 +201,17 @@ fun LandlordHomeScreenWrapper(
 
     user?.let {
         LandlordHomeScreen(
-            landlordCode = it.landlordCode ?: "無",
+            landlord = it, // <-- 傳入整個 user 物件
             onNavigate = { route ->
-                if (route == "announcement") {
-                    onNavigate("announcement/${it.id}")
-                } else {
-                    onNavigate(route)
+                when (route) {
+                    "announcement" -> onNavigate("announcement/${it.id}")
+                    "room_manage" -> onNavigate("room_manage/${it.id}")
+                    // --- 【*** 核心修改：新增導航 ***】 ---
+                    "electricity_query" -> onNavigate("electricity_query/${it.id}")
+                    else -> onNavigate(route)
                 }
             },
-            onLogout = onLogout // 傳遞登出事件
+            onLogout = onLogout
         )
     }
 }

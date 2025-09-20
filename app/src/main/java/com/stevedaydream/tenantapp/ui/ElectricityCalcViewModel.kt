@@ -1,48 +1,45 @@
-// ui/ElectricityCalcViewModel.kt
+// tenantapp/ui/ElectricityCalcViewModel.kt
+package com.stevedaydream.tenantapp.ui // 假設的 package 路徑
+
 import androidx.lifecycle.ViewModel
-import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.ViewModelProvider
-import com.stevedaydream.tenantapp.data.ElectricMeterDao
-import com.stevedaydream.tenantapp.data.ElectricMeterRecord
-import com.stevedaydream.tenantapp.data.RoomDao
-import com.stevedaydream.tenantapp.data.RoomEntity
+import androidx.lifecycle.viewModelScope
+import com.stevedaydream.tenantapp.data.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
-import java.util.Calendar
-import java.util.Date
-import java.util.Locale
+import java.util.*
+import kotlin.comparisons.minOf // <-- 【*** 核心修改：確認 import 正確 ***】
 
-
-
-// 【核心修改】ViewModel Factory，用於傳遞 userRole
+// --- Factory ---
 class ElectricityCalcViewModelFactory(
     private val roomDao: RoomDao,
     private val meterDao: ElectricMeterDao,
-    private val userRole: String // 新增 userRole
+    private val userRole: String,
+    private val settingsManager: SettingsManager
 ) : ViewModelProvider.Factory {
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         if (modelClass.isAssignableFrom(ElectricityCalcViewModel::class.java)) {
             @Suppress("UNCHECKED_CAST")
-            return ElectricityCalcViewModel(roomDao, meterDao, userRole) as T
+            return ElectricityCalcViewModel(roomDao, meterDao, userRole, settingsManager) as T
         }
         throw IllegalArgumentException("Unknown ViewModel class")
     }
 }
 
-// 【核心修改】ViewModel 建構子接收 userRole
+// --- ViewModel ---
 class ElectricityCalcViewModel(
     private val roomDao: RoomDao,
     private val meterDao: ElectricMeterDao,
-    private val userRole: String
+    private val userRole: String,
+    private val settingsManager: SettingsManager
 ) : ViewModel() {
 
-    // 【核心修改】在 UiState 中新增 isEditEnabled 欄位
     data class UiState(
-        val isEditEnabled: Boolean = true, // 新增：控制是否可編輯
+        val isEditEnabled: Boolean = true,
         val currentMonth: String = SimpleDateFormat("yyyy-MM", Locale.getDefault()).format(Date()),
         val showMonthPicker: Boolean = false,
         val roomList: List<RoomEntity> = emptyList(),
@@ -52,9 +49,10 @@ class ElectricityCalcViewModel(
         val feeMap: Map<String, Float> = emptyMap(),
         val canSave: Boolean = false,
         val message: String = "",
-        val messageType: MessageType = MessageType.Info
+        val messageType: MessageType = MessageType.Info,
+        val showSettingsDialog: Boolean = false,
+        val settings: CalculationSettings? = null
     )
-
 
     enum class MessageType { Success, Error, Info }
 
@@ -62,32 +60,26 @@ class ElectricityCalcViewModel(
     val uiState: StateFlow<UiState> = _uiState
 
     private val monthFormatter = SimpleDateFormat("yyyy-MM", Locale.getDefault())
-    private val ELECTRICITY_RATE = 5.0f
 
     init {
-        // 【核心修改】初始化時根據 userRole 設定 isEditEnabled
         _uiState.update { it.copy(isEditEnabled = (userRole == "landlord")) }
 
         viewModelScope.launch {
-            roomDao.getAllRooms().collect { rooms ->
-                _uiState.update { it.copy(roomList = rooms) }
+            roomDao.getAllRooms().combine(settingsManager.settingsFlow) { rooms, settings ->
+                Pair(rooms, settings)
+            }.collect { (rooms, settings) ->
+                _uiState.update { it.copy(roomList = rooms, settings = settings) }
                 loadDataForMonth(_uiState.value.currentMonth)
             }
         }
     }
 
-    /**
-     * 【核心修正】載入指定月份的資料庫紀錄和計算結果。
-     *
-     * @param month 要載入的月份，格式為 "yyyy-MM"。
-     */
     private fun loadDataForMonth(month: String) {
         viewModelScope.launch {
             val rooms = _uiState.value.roomList
-            // 取得本月已儲存的紀錄
+            val settings = _uiState.value.settings ?: return@launch
             val recordsForMonth = rooms.mapNotNull { room -> meterDao.getRecord(room.roomNumber, month) }
 
-            // 初始化UI顯示的度數和鎖定狀態
             val meterMapForLoadedMonth = rooms.associate { room ->
                 val record = recordsForMonth.find { it.roomNumber == room.roomNumber }
                 room.roomNumber to (record?.meterValue?.toString() ?: "")
@@ -96,32 +88,41 @@ class ElectricityCalcViewModel(
                 room.roomNumber to (recordsForMonth.any { it.roomNumber == room.roomNumber })
             }
 
-            // 【邏輯修正】精確計算用電度數和費用
             val used = mutableMapOf<String, Int>()
             val fees = mutableMapOf<String, Float>()
             for (room in rooms) {
-                val currentRecord = recordsForMonth.find { it.roomNumber == room.roomNumber }
-                // 使用新的DAO方法精確查找上個月的紀錄
+                val currentRecord = meterDao.getRecord(room.roomNumber, month) // 重新獲取以確保最新
                 val previousRecord = meterDao.getPreviousRecord(room.roomNumber, month)
 
                 if (currentRecord != null && previousRecord != null) {
                     val usedVal = currentRecord.meterValue - previousRecord.meterValue
-                    if(usedVal >= 0){
+                    if (usedVal >= 0) {
                         used[room.roomNumber] = usedVal
-                        fees[room.roomNumber] = usedVal * ELECTRICITY_RATE
+
+                        val fee = when (settings.mode) {
+                            CalculationMode.FIXED -> {
+                                usedVal * settings.fixedRate
+                            }
+                            CalculationMode.TIERED -> {
+                                calculateTieredFee(
+                                    totalUsage = usedVal,
+                                    tiers = settings.tiers,
+                                    numberOfMeters = rooms.size.coerceAtLeast(1)
+                                ).finalFee.toFloat()
+                            }
+                        }
+                        fees[room.roomNumber] = fee
                     }
                 }
             }
 
-            // 判斷是否可儲存
             val canSave = rooms.any {
                 val isLocked = lockedRoomMapForLoadedMonth[it.roomNumber] == true
-                !isLocked && meterMapForLoadedMonth[it.roomNumber]?.toIntOrNull() != null
+                !isLocked && meterMapForLoadedMonth[it.roomNumber]?.isNotBlank() == true
             }
 
             _uiState.update {
                 it.copy(
-                    currentMonth = month,
                     meterMap = meterMapForLoadedMonth,
                     lockedRoomMap = lockedRoomMapForLoadedMonth,
                     usedMap = used,
@@ -134,17 +135,26 @@ class ElectricityCalcViewModel(
         }
     }
 
+    fun onShowSettingsDialog() {
+        _uiState.update { it.copy(showSettingsDialog = true) }
+    }
+    fun onDismissSettingsDialog() {
+        _uiState.update { it.copy(showSettingsDialog = false) }
+    }
+    fun saveSettings(settings: CalculationSettings) {
+        viewModelScope.launch {
+            settingsManager.saveSettings(settings)
+            _uiState.update { it.copy(showSettingsDialog = false) }
+            loadDataForMonth(_uiState.value.currentMonth)
+        }
+    }
 
-    /**
-     * 【流程優化】更新月份狀態並立即重新載入資料。
-     */
     private fun changeMonth(newMonth: String) {
         if (newMonth != _uiState.value.currentMonth) {
             _uiState.update {
                 it.copy(
                     currentMonth = newMonth,
                     showMonthPicker = false,
-                    // 重置輸入與計算結果，準備顯示新月份的資料
                     meterMap = emptyMap(),
                     lockedRoomMap = emptyMap(),
                     usedMap = emptyMap(),
@@ -154,15 +164,12 @@ class ElectricityCalcViewModel(
                     messageType = MessageType.Info
                 )
             }
-            // 立即為新月份載入資料
             loadDataForMonth(newMonth)
         } else {
             _uiState.update { it.copy(showMonthPicker = false) }
         }
     }
 
-
-    // 2. 月份選擇事件 (UI觸發)
     fun onShowMonthPicker() {
         _uiState.update { it.copy(showMonthPicker = true) }
     }
@@ -200,10 +207,9 @@ class ElectricityCalcViewModel(
         changeMonth(newMonth)
     }
 
-    // 3. 輸入/鎖定事件 (保持不變)
     fun onMeterValueChange(roomNumber: String, value: String) {
         val newMeterMap = _uiState.value.meterMap.toMutableMap()
-        newMeterMap[roomNumber] = value.filter { it.isDigit() } // 只允許數字
+        newMeterMap[roomNumber] = value.filter { it.isDigit() }
         val canSaveNow = newMeterMap.any { (room, v) ->
             !(_uiState.value.lockedRoomMap[room] ?: false) && v.isNotBlank() && v.toIntOrNull() != null
         }
@@ -218,7 +224,6 @@ class ElectricityCalcViewModel(
         _uiState.update { it.copy(lockedRoomMap = newLockedMap) }
     }
 
-    // 4. 儲存並計算
     fun saveAndCalculate() {
         viewModelScope.launch {
             val rooms = _uiState.value.roomList
@@ -227,18 +232,15 @@ class ElectricityCalcViewModel(
 
             val recordsToSave = mutableListOf<ElectricMeterRecord>()
             var hasInvalidInput = false
-            rooms.forEach { room ->
-                // 只處理未鎖定的房間
+            for (room in rooms) {
                 if (_uiState.value.lockedRoomMap[room.roomNumber] != true) {
                     val meterValueStr = meterMap[room.roomNumber]
                     if (!meterValueStr.isNullOrBlank()) {
                         val v = meterValueStr.toIntOrNull()
                         if (v != null) {
-                            // 【邏輯修正】檢查度數是否小於上期
                             val previousRecord = meterDao.getPreviousRecord(room.roomNumber, currentMonth)
                             if (previousRecord != null && v < previousRecord.meterValue) {
                                 hasInvalidInput = true
-                                // 可以在此處設定更詳細的錯誤訊息
                                 _uiState.update { it.copy(message = "${room.roomNumber}房度數不可小於上期", messageType = MessageType.Error) }
                                 return@launch
                             }
@@ -262,7 +264,6 @@ class ElectricityCalcViewModel(
                 return@launch
             }
 
-
             if (recordsToSave.isNotEmpty()) {
                 meterDao.insertOrUpdateRecords(recordsToSave)
                 _uiState.update {
@@ -271,7 +272,6 @@ class ElectricityCalcViewModel(
                         messageType = MessageType.Success
                     )
                 }
-                // 儲存成功後，重新載入該月份資料以更新預覽區塊和鎖定狀態
                 loadDataForMonth(currentMonth)
             } else {
                 _uiState.update {
@@ -283,4 +283,62 @@ class ElectricityCalcViewModel(
             }
         }
     }
+
+    private fun calculateTieredFee(
+        totalUsage: Int,
+        tiers: List<Pair<Double, Double>>,
+        numberOfMeters: Int
+    ): ElectricityFeeResult {
+        val usageAsDouble = totalUsage.toDouble()
+        if (usageAsDouble <= 0) {
+            return ElectricityFeeResult(0.0, 0.0, 0.0, 0.0, "NoUsage")
+        }
+
+        val sharedTiers = tiers.map { (totalRange, rate) ->
+            Pair(totalRange / numberOfMeters, rate)
+        }
+
+        var tieredFee = 0.0
+        var remainingUsage = usageAsDouble
+
+        for ((sharedRange, rate) in sharedTiers) {
+            if (remainingUsage > 0) {
+                // 【*** 核心修改：將 minOF 改為 minOf ***】
+                val usageInTier = minOf(remainingUsage, sharedRange)
+                tieredFee += usageInTier * rate
+                remainingUsage -= usageInTier
+            } else {
+                break
+            }
+        }
+
+        val averageRate = if (usageAsDouble > 0) tieredFee / usageAsDouble else 0.0
+
+        val finalFee: Double
+        val calculationMethod: String
+
+        if (averageRate < 5.0) {
+            finalFee = usageAsDouble * 5.0
+            calculationMethod = "MinimumRate"
+        } else {
+            finalFee = tieredFee
+            calculationMethod = "Tiered"
+        }
+
+        return ElectricityFeeResult(
+            totalUsage = usageAsDouble,
+            tieredFee = tieredFee,
+            averageRate = averageRate,
+            finalFee = finalFee,
+            calculationMethod = calculationMethod
+        )
+    }
+
+    data class ElectricityFeeResult(
+        val totalUsage: Double,
+        val tieredFee: Double,
+        val averageRate: Double,
+        val finalFee: Double,
+        val calculationMethod: String
+    )
 }

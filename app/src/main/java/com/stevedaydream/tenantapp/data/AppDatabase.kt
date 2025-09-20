@@ -11,16 +11,19 @@ import androidx.room.RoomDatabase
         ElectricMeterRecord::class,
         Announcement::class,
         User::class,
-               ],
-    version = 11, // 資料庫升級
+        Payment::class,
+    ],
+    version = 15, // <-- 版本升級到 13
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
+    // ... (其餘部分保持不變)
     abstract fun repairReportDao(): RepairReportDao
     abstract fun roomDao(): RoomDao
-    abstract fun electricMeterDao(): ElectricMeterDao // 新增
-    abstract fun announcementDao(): AnnouncementDao   // ←加這行
+    abstract fun electricMeterDao(): ElectricMeterDao
+    abstract fun announcementDao(): AnnouncementDao
     abstract fun userDao(): UserDao
+    abstract fun paymentDao(): PaymentDao
 
 
     companion object {

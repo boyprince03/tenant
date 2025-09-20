@@ -1,103 +1,104 @@
 // RoomManageScreen.kt
 package com.stevedaydream.tenantapp.ui
 
+import android.app.DatePickerDialog
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
-import com.stevedaydream.tenantapp.data.RoomDao
-import com.stevedaydream.tenantapp.data.RoomEntity
-import kotlinx.coroutines.launch
-import androidx.compose.foundation.clickable
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.MoreVert
-import androidx.navigation.NavHostController
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.rememberScrollState
-import android.app.DatePickerDialog
-import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.navigation.NavHostController
+import com.stevedaydream.tenantapp.data.AppDatabase
+import com.stevedaydream.tenantapp.data.RoomEntity
+import com.stevedaydream.tenantapp.data.User
+import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
-import java.util.Calendar
-import java.util.Date
-import java.util.Locale
+import java.util.*
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun RoomManageScreen(roomDao: RoomDao, navController: NavHostController) {
-    val rooms by roomDao.getAllRooms().collectAsState(initial = emptyList())
+fun RoomManageScreen(
+    userId: Int,
+    db: AppDatabase,
+    navController: NavHostController
+) {
+    val roomDao = db.roomDao()
+    val userDao = db.userDao()
+    var currentUser by remember { mutableStateOf<User?>(null) }
+
+    LaunchedEffect(userId) {
+        currentUser = userDao.getUserById(userId)
+    }
+
+    val rooms by remember(currentUser) {
+        currentUser?.landlordCode?.let { roomDao.getRoomsByLandlordCodeFlow(it) }
+            ?: kotlinx.coroutines.flow.flowOf(emptyList())
+    }.collectAsState(initial = emptyList())
+
     var editingRoom by remember { mutableStateOf<RoomEntity?>(null) }
     var showDialog by remember { mutableStateOf(false) }
-    var expanded by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("房間管理") },
+                title = { Text("房間資料管理", fontWeight = FontWeight.Bold) },
                 navigationIcon = {
                     IconButton(onClick = { navController.popBackStack() }) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "返回")
                     }
-                },
-                actions = {
-                    IconButton(onClick = { expanded = true }) {
-                        Icon(Icons.Default.MoreVert, contentDescription = "選單")
-                    }
-                    DropdownMenu(
-                        expanded = expanded,
-                        onDismissRequest = { expanded = false }
-                    ) {
-                        DropdownMenuItem(
-                            text = { Text("首頁") },
-                            onClick = {
-                                expanded = false
-                                navController.navigate("mainhome")
-                            }
-                        )
-                        // 可再加選單
-                    }
                 }
             )
+        },
+        floatingActionButton = {
+            FloatingActionButton(
+                onClick = {
+                    editingRoom = RoomEntity(
+                        roomNumber = "",
+                        landlordCode = currentUser?.landlordCode
+                    )
+                    showDialog = true
+                }
+            ) {
+                Icon(Icons.Default.Add, contentDescription = "新增房間")
+            }
         }
     ) { innerPadding ->
-        Column(Modifier.padding(innerPadding).padding(16.dp)) {
-            Button(
-                onClick = {
-                    editingRoom = RoomEntity(roomNumber = "") // landlordCode is nullable now
-                    showDialog = true
-                },
-                modifier = Modifier.fillMaxWidth()
+
+        if (rooms.isEmpty()) {
+            Box(
+                modifier = Modifier.fillMaxSize().padding(innerPadding),
+                contentAlignment = Alignment.Center
             ) {
-                Text("新增房間")
+                Text(
+                    "您尚未建立任何房間資料",
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
-            Spacer(Modifier.height(8.dp))
-            LazyColumn {
+        } else {
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding),
+                contentPadding = PaddingValues(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
                 items(rooms) { room ->
-                    Card(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 4.dp)
-                            .clickable {
-                                editingRoom = room
-                                showDialog = true
-                            }
-                    ) {
-                        Column(Modifier.padding(16.dp)) {
-                            Text("房號: ${room.roomNumber}")
-                            Text("租客: ${room.tenantName}")
-                            Text("房型: ${room.type}")
-                            Text("租金: ${room.rentAmount}")
-                            Text("押金: ${room.deposit}")
-                            Text("狀態: ${if (room.status.isBlank()) "未設定" else room.status}")
-                            Text("租期: ${room.rentDuration}")
-                            Text("起: ${room.rentStartDate}  迄: ${room.rentEndDate}")
-                            if (room.note.isNotBlank()) Text("備註: ${room.note}")
-                        }
+                    RoomItemCard(room = room) {
+                        editingRoom = room
+                        showDialog = true
                     }
                 }
             }
@@ -105,11 +106,12 @@ fun RoomManageScreen(roomDao: RoomDao, navController: NavHostController) {
 
         if (showDialog) {
             RoomEditDialog(
-                room = editingRoom ?: RoomEntity(roomNumber = ""),
+                room = editingRoom ?: RoomEntity(roomNumber = "", landlordCode = currentUser?.landlordCode),
                 onDismiss = { showDialog = false },
                 onSave = { room ->
                     scope.launch {
-                        roomDao.insertRoom(room)
+                        val roomToSave = room.copy(landlordCode = currentUser?.landlordCode)
+                        roomDao.insertRoom(roomToSave)
                         showDialog = false
                     }
                 },
@@ -124,7 +126,64 @@ fun RoomManageScreen(roomDao: RoomDao, navController: NavHostController) {
     }
 }
 
-// 編輯/新增房間 Dialog（含所有欄位）
+@Composable
+fun RoomItemCard(room: RoomEntity, onClick: () -> Unit) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Column(Modifier.padding(16.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    "房號: ${room.roomNumber}",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    "狀態: ${room.status.ifBlank { "未設定" }}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = when {
+                        room.status.contains("可租") -> MaterialTheme.colorScheme.primary
+                        room.status.contains("出租中") -> MaterialTheme.colorScheme.error
+                        else -> MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+            Divider(modifier = Modifier.padding(vertical = 8.dp))
+            InfoRow("租客", room.tenantName.ifBlank { "無" })
+            InfoRow("房型", room.type.ifBlank { "未設定" })
+            InfoRow("租金", if (room.rentAmount > 0) "${room.rentAmount} 元" else "未設定")
+            if (room.rentStartDate.isNotBlank()) {
+                InfoRow("租期", "${room.rentStartDate} ~ ${room.rentEndDate}")
+            }
+        }
+    }
+}
+
+@Composable
+private fun InfoRow(label: String, value: String) {
+    Row(Modifier.padding(vertical = 2.dp)) {
+        Text(
+            text = "$label:",
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.width(80.dp)
+        )
+        Text(
+            text = value,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
 @Composable
 fun RoomEditDialog(
     room: RoomEntity,
@@ -138,20 +197,16 @@ fun RoomEditDialog(
     var note by remember { mutableStateOf(room.note) }
     var rentAmount by remember { mutableStateOf(if (room.rentAmount == 0) "" else room.rentAmount.toString()) }
     var deposit by remember { mutableStateOf(if (room.deposit == 0) "" else room.deposit.toString()) }
-
-    // 【核心修改】如果狀態為空，則預設為 "可租"
     var status by remember { mutableStateOf(room.status.ifBlank { "可租" }) }
     val statusOptions = listOf("可租", "出租中", "維修中")
-
     var rentEndDate by remember { mutableStateOf(room.rentEndDate) }
     var rentDuration by remember { mutableStateOf(room.rentDuration) }
-    val durationOptions = listOf("0.5", "1", "2", "3")
-    var rentDurationIndex by remember { mutableStateOf(1) } // 預設 1 年
-
+    val durationOptions = listOf("半年", "一年", "二年")
+    var rentDurationIndex by remember { mutableStateOf(1) }
     var rentStartDate by remember { mutableStateOf(room.rentStartDate) }
-
     val sdf = remember { SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()) }
     val context = LocalContext.current
+
     fun showDatePicker(onDateSet: (String) -> Unit) {
         val c = Calendar.getInstance()
         if (rentStartDate.isNotBlank()) {
@@ -169,17 +224,15 @@ fun RoomEditDialog(
             c.get(Calendar.YEAR), c.get(Calendar.MONTH), c.get(Calendar.DAY_OF_MONTH)
         ).show()
     }
-
     LaunchedEffect(rentStartDate, rentDurationIndex) {
         if (rentStartDate.isNotBlank()) {
             try {
                 val start = Calendar.getInstance()
                 start.time = sdf.parse(rentStartDate)!!
                 val years = when (rentDurationIndex) {
-                    0 -> 0 // 0.5年
+                    0 -> 0
                     1 -> 1
                     2 -> 2
-                    3 -> 3
                     else -> 1
                 }
                 val months = if (rentDurationIndex == 0) 6 else 0
@@ -187,6 +240,7 @@ fun RoomEditDialog(
                 start.add(Calendar.MONTH, months)
                 start.add(Calendar.DAY_OF_MONTH, -1)
                 rentEndDate = sdf.format(start.time)
+                rentDuration = durationOptions[rentDurationIndex]
             } catch (e: Exception) {
                 rentEndDate = ""
             }
@@ -194,21 +248,20 @@ fun RoomEditDialog(
             rentEndDate = ""
         }
     }
-
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(if (room.roomNumber.isBlank()) "新增房間" else "編輯房間") },
+        title = { Text(if (room.roomNumber.isBlank()) "新增房間" else "編輯房間 - ${room.roomNumber}") },
         text = {
-            Column (
+            Column(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(max = 400.dp)
                     .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                OutlinedTextField(value = roomNumber, onValueChange = { roomNumber = it }, label = { Text("房號") })
-                OutlinedTextField(value = tenantName, onValueChange = { tenantName = it }, label = { Text("租客姓名") })
-                OutlinedTextField(value = type, onValueChange = { type = it }, label = { Text("房型") })
+                OutlinedTextField(value = roomNumber, onValueChange = { roomNumber = it }, label = { Text("房號") }, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(value = type, onValueChange = { type = it }, label = { Text("房型 (例：雅房、套房)") }, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(value = tenantName, onValueChange = { tenantName = it }, label = { Text("租客姓名 (可留空)") }, modifier = Modifier.fillMaxWidth())
+
+                Divider(Modifier.padding(vertical = 4.dp))
 
                 Text("房屋狀態", style = MaterialTheme.typography.labelLarge)
                 Row(
@@ -219,7 +272,7 @@ fun RoomEditDialog(
                     statusOptions.forEach { option ->
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.clickable { status = option }
+                            modifier = Modifier.clickable { status = option }.padding(end = 8.dp)
                         ) {
                             RadioButton(
                                 selected = (status == option),
@@ -229,7 +282,6 @@ fun RoomEditDialog(
                         }
                     }
                 }
-
                 OutlinedTextField(
                     value = rentAmount,
                     onValueChange = {
@@ -237,35 +289,36 @@ fun RoomEditDialog(
                         val amount = rentAmount.toIntOrNull() ?: 0
                         deposit = if (amount > 0) (amount * 2).toString() else ""
                     },
-                    label = { Text("租金(元)") }
+                    label = { Text("月租金(元)") },
+                    modifier = Modifier.fillMaxWidth()
                 )
                 OutlinedTextField(
                     value = deposit,
                     onValueChange = {},
-                    label = { Text("押金(2個月)") },
+                    label = { Text("押金(自動計算為2個月)") },
                     readOnly = true,
                     enabled = false,
                     modifier = Modifier.fillMaxWidth()
                 )
 
+                Divider(Modifier.padding(vertical = 4.dp))
+
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("租期", Modifier.padding(end = 0.dp))
+                    Text("租期", Modifier.padding(end = 8.dp))
                     durationOptions.forEachIndexed { idx, label ->
-                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(end = 0.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
                             RadioButton(selected = rentDurationIndex == idx, onClick = { rentDurationIndex = idx })
                             Text(label)
                         }
                     }
                 }
-
                 Box(modifier = Modifier.fillMaxWidth()) {
                     OutlinedTextField(
                         value = rentStartDate,
                         onValueChange = {},
-                        label = { Text("租賃開始日 yyyy-MM-dd") },
+                        label = { Text("租賃開始日") },
                         modifier = Modifier.fillMaxWidth(),
-                        readOnly = true,
-                        enabled = true
+                        readOnly = true
                     )
                     Box(
                         modifier = Modifier
@@ -276,11 +329,11 @@ fun RoomEditDialog(
                 OutlinedTextField(
                     value = rentEndDate,
                     onValueChange = {},
-                    label = { Text("租賃結束日 yyyy-MM-dd") },
+                    label = { Text("租賃結束日 (自動計算)") },
                     modifier = Modifier.fillMaxWidth(),
                     enabled = false
                 )
-                OutlinedTextField(value = note, onValueChange = { note = it }, label = { Text("備註") })
+                OutlinedTextField(value = note, onValueChange = { note = it }, label = { Text("備註") }, modifier = Modifier.fillMaxWidth())
             }
         },
         confirmButton = {
@@ -304,14 +357,13 @@ fun RoomEditDialog(
             }) { Text("儲存") }
         },
         dismissButton = {
-            Row {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (room.roomNumber.isNotBlank()) {
                     Button(
                         onClick = { onDelete(room) },
                         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
                     ) { Text("刪除") }
                 }
-                Spacer(modifier = Modifier.width(8.dp))
                 TextButton(onClick = onDismiss) {
                     Text("取消")
                 }

@@ -59,6 +59,17 @@ import jxl.write.WritableWorkbook
 import java.io.File
 import java.io.InputStream
 import android.os.Environment
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.width
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.FileUpload
+import androidx.compose.material.icons.filled.FlashOn
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Input
+import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.LocalContentColor
 
 // Helper function: Show a Toast message
 private fun showToast(context: Context, message: String) {
@@ -139,12 +150,11 @@ fun ExcelImportScreen(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var excelUri by remember { mutableStateOf<Uri?>(null) }
     var previewRows by remember { mutableStateOf<List<Map<String, String>>>(emptyList()) }
+    var detectedType by remember { mutableStateOf<String?>(null) }
     var message by remember { mutableStateOf("") }
-    var importType by remember { mutableStateOf("房間") } // "房間" or "電表"
+    var isLoading by remember { mutableStateOf(false) }
 
-    // Helper function to parse Excel, auto-detect type, and check for duplicates
     suspend fun parseExcelAndDetectType(uri: Uri): Pair<List<Map<String, String>>, String?>? {
         var inputStream: InputStream? = null
         try {
@@ -208,21 +218,23 @@ fun ExcelImportScreen(
     // 1. Open file chooser
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
-            excelUri = uri
+            isLoading = true
             scope.launch {
                 val result = parseExcelAndDetectType(uri)
-                if (result != null) {
+                if (result != null && result.second != null) {
                     previewRows = result.first
-                    importType = result.second ?: "房間" // Default to 房間 if type is null
-                    message = if (previewRows.isEmpty()) "預覽失敗，請檢查檔案格式或內容" else "預覽成功，已自動偵測為${importType}資料"
+                    detectedType = result.second
+                    message = if (previewRows.isEmpty()) "預覽失敗，請檢查檔案格式或內容" else "預覽成功，已自動偵測為【${detectedType}】資料"
                 } else {
-                    message = "檔案格式不正確，請選擇房間或電表度數的範本檔案。"
+                    message = "檔案格式不正確或無法辨識，請下載範本確認。"
                     previewRows = emptyList()
-                    excelUri = null
+                    detectedType = null
                 }
+                isLoading = false
             }
         }
     }
+
 
     Scaffold(
         topBar = {
@@ -242,149 +254,160 @@ fun ExcelImportScreen(
                 .padding(innerPadding)
                 .verticalScroll(rememberScrollState())
                 .padding(16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // Import type selection
-            ElevatedCard(
-                modifier = Modifier.fillMaxWidth(),
-                elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+            // 步驟一：下載範本
+            StepCard(
+                step = "1",
+                title = "下載範本",
+                icon = Icons.Default.Download
             ) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Text("選擇匯入資料型態 (已自動偵測)", style = MaterialTheme.typography.titleLarge)
-                    Spacer(Modifier.height(8.dp))
-                    Divider(modifier = Modifier.padding(vertical = 8.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceAround
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            RadioButton(selected = importType == "房間", onClick = {
-                                importType = "房間"
-                                previewRows = emptyList()
-                                message = ""
-                            })
-                            Text("房間資料")
-                        }
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            RadioButton(selected = importType == "電表", onClick = {
-                                importType = "電表"
-                                previewRows = emptyList()
-                                message = ""
-                            })
-                            Text("電表度數")
-                        }
-                    }
-                }
-            }
-
-            // Select Excel file button
-            ElevatedButton(
-                onClick = { launcher.launch(arrayOf("application/vnd.ms-excel", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")) },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Icon(Icons.Default.DriveFolderUpload, contentDescription = "選擇檔案", modifier = Modifier.padding(end = 8.dp))
-                Text("選擇 Excel 檔案進行預覽", style = MaterialTheme.typography.bodyLarge)
-            }
-
-            // Excel data preview and import
-            if (previewRows.isNotEmpty()) {
-                ElevatedCard(
+                Text(
+                    "請先下載對應的 Excel 範本檔案，並根據範本格式填寫您的資料。",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                Spacer(Modifier.height(16.dp))
+                Row(
                     modifier = Modifier.fillMaxWidth(),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+                    horizontalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Text("預覽資料（前5筆）", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                        Text(
-                            "• 紅色標示為資料庫已存在，匯入時將跳過。",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.error
-                        )
-                        Divider(modifier = Modifier.padding(vertical = 8.dp))
-                        previewRows.take(5).forEachIndexed { idx, row ->
-                            val isDuplicate = row["重複"] == "是"
-                            val displayText = "${idx + 1}. ${row.filterKeys { it != "重複" }}"
-                            Text(
-                                text = displayText,
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = if (isDuplicate) MaterialTheme.colorScheme.error else Color.Unspecified
-                            )
-                        }
-                        Spacer(Modifier.height(16.dp))
-                        ElevatedButton(
-                            onClick = {
-                                scope.launch {
-                                    val result = importExcelToDb(previewRows, importType, roomDao, meterDao)
-                                    message = result
-                                    // Clear preview after successful import
-                                    if (result.startsWith("成功")) {
-                                        previewRows = emptyList()
-                                        excelUri = null
-                                    }
-                                }
-                            },
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Icon(Icons.Default.UploadFile, contentDescription = "匯入", modifier = Modifier.padding(end = 8.dp))
-                            Text("匯入資料到本地資料庫", style = MaterialTheme.typography.bodyLarge)
-                        }
+                    ElevatedButton(
+                        onClick = {
+                            val path = createRoomExcelTemplate(context)
+                            showToast(context, if (path != null) "已下載至: $path" else "下載失敗")
+                        },
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Icon(Icons.Default.Home, contentDescription = null, modifier = Modifier.padding(end = 8.dp))
+                        Text("房間資料")
+                    }
+                    ElevatedButton(
+                        onClick = {
+                            val path = createElectricExcelTemplate(context)
+                            showToast(context, if (path != null) "已下載至: $path" else "下載失敗")
+                        },
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Icon(Icons.Default.FlashOn, contentDescription = null, modifier = Modifier.padding(end = 8.dp))
+                        Text("電表度數")
                     }
                 }
             }
-            if (message.isNotEmpty()) {
-                Text(message, color = if (message.startsWith("檔案格式")) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+
+            // 步驟二：選擇檔案與預覽
+            StepCard(
+                step = "2",
+                title = "選擇檔案與預覽",
+                icon = Icons.Default.FileUpload
+            ) {
+                ElevatedButton(
+                    onClick = { launcher.launch(arrayOf("application/vnd.ms-excel", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")) },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.Default.DriveFolderUpload, contentDescription = null, modifier = Modifier.padding(end = 8.dp))
+                    Text("選擇 Excel 檔案")
+                }
+
+                if (isLoading) {
+                    CircularProgressIndicator(modifier = Modifier.padding(top = 16.dp))
+                }
+
+                if (message.isNotEmpty()) {
+                    Text(
+                        message,
+                        color = if (message.startsWith("檔案格式")) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(top = 8.dp)
+                    )
+                }
             }
 
-            // Template download section
-            ElevatedCard(
-                modifier = Modifier.fillMaxWidth(),
-                elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.Info, contentDescription = "說明", modifier = Modifier.padding(end = 8.dp))
-                        Text("Excel 格式說明", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            // 步驟三：確認與匯入
+            if (previewRows.isNotEmpty()) {
+                val nonDuplicateCount = previewRows.count { it["重複"] != "是" }
+                StepCard(
+                    step = "3",
+                    title = "確認與匯入",
+                    icon = Icons.Default.CheckCircle
+                ) {
+                    Text("預覽資料（前5筆）：", style = MaterialTheme.typography.titleSmall)
+                    previewRows.take(5).forEachIndexed { idx, row ->
+                        val isDuplicate = row["重複"] == "是"
+                        val displayText = "${idx + 1}. " + when(detectedType) {
+                            "房間" -> "房號=${row["房號"]}, 租客=${row["租客姓名"]}"
+                            "電表" -> "房號=${row["房號"]}, 月份=${row["月份"]}, 度數=${row["度數"]}"
+                            else -> ""
+                        }
+                        Text(
+                            text = displayText,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (isDuplicate) MaterialTheme.colorScheme.error else LocalContentColor.current
+                        )
                     }
-                    Divider(modifier = Modifier.padding(vertical = 8.dp))
+
+                    Divider(modifier = Modifier.padding(vertical = 12.dp))
+
                     Text(
-                        // 【核心修改】更新說明文字
-                        "• 房間資料需欄位：房號、租客姓名、房型、租金、押金、房屋狀態、起租日、結束日、租賃期間、備註\n" +
-                                "• 電表度數需欄位：房號、月份、度數",
-                        style = MaterialTheme.typography.bodyMedium
+                        "共 ${previewRows.size} 筆資料，其中 $nonDuplicateCount 筆可匯入。",
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(
+                        "紅色標示為資料庫已存在，匯入時將自動跳過。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Spacer(Modifier.height(16.dp))
-                    Text("下載範本填寫後再匯入：", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                    Spacer(Modifier.height(8.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(16.dp)
+
+                    Button(
+                        onClick = {
+                            scope.launch {
+                                val result = importExcelToDb(previewRows, detectedType!!, roomDao, meterDao)
+                                showToast(context, result)
+                                if (result.startsWith("成功")) {
+                                    previewRows = emptyList()
+                                    detectedType = null
+                                    message = ""
+                                }
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth().height(50.dp),
+                        enabled = nonDuplicateCount > 0
                     ) {
-                        ElevatedButton(
-                            onClick = {
-                                val path = createRoomExcelTemplate(context)
-                                showToast(context, if (path != null) "已下載至: $path" else "下載失敗")
-                            },
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Icon(Icons.Default.Description, contentDescription = "房間範本", modifier = Modifier.padding(end = 8.dp))
-                            Text("房間資料")
-                        }
-                        ElevatedButton(
-                            onClick = {
-                                val path = createElectricExcelTemplate(context)
-                                showToast(context, if (path != null) "已下載至: $path" else "下載失敗")
-                            },
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Icon(Icons.Default.List, contentDescription = "電表範本", modifier = Modifier.padding(end = 8.dp))
-                            Text("電表度數")
-                        }
+                        Icon(Icons.Default.Input, contentDescription = "匯入", modifier = Modifier.padding(end = 8.dp))
+                        Text("開始匯入")
                     }
                 }
             }
+        }
+    }
+}
+@Composable
+private fun StepCard(
+    step: String,
+    title: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    ElevatedCard(
+        modifier = Modifier.fillMaxWidth(),
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center
+            ) {
+                Icon(icon, contentDescription = title, tint = MaterialTheme.colorScheme.primary)
+                Spacer(Modifier.width(8.dp))
+                Text("步驟 $step: $title", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            }
+            Divider(modifier = Modifier.padding(vertical = 12.dp))
+            content()
         }
     }
 }

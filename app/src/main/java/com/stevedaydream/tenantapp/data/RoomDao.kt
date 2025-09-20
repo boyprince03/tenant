@@ -11,19 +11,27 @@ interface RoomDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertRoom(room: RoomEntity)
 
-
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertRooms(rooms: List<RoomEntity>)
+
     @Query("SELECT * FROM rooms ORDER BY roomNumber ASC")
-    fun getAllRoomsNow(): List<RoomEntity>
+    suspend fun getAllRoomsNow(): List<RoomEntity> // <-- 改為 suspend fun
+
     @Delete
     suspend fun deleteRoom(room: RoomEntity)
 
-    // 【核心修改】將 "code: String" 改為 "code: String?"，允許傳入 null
     @Query("SELECT * FROM rooms WHERE landlordCode = :code")
-    fun getRoomsByLandlordCode(code: String?): List<RoomEntity>
+    suspend fun getRoomsByLandlordCode(code: String): List<RoomEntity> // <-- 改為 suspend fun
 
-    // 新增此行以支援 ExcelImportScreen 中的重複檢查功能
+    @Query("SELECT * FROM rooms WHERE landlordCode IS NULL")
+    suspend fun getUnassignedRooms(): List<RoomEntity> // <-- 改為 suspend fun
+
     @Query("SELECT * FROM rooms")
     fun getAll(): Flow<List<RoomEntity>>
+
+    // --- 【*** 新增此方法 ***】 ---
+    @Query("SELECT * FROM rooms WHERE roomNumber = :roomNumber LIMIT 1")
+    suspend fun getRoomByNumber(roomNumber: String): RoomEntity?
+    @Query("SELECT * FROM rooms WHERE landlordCode = :code ORDER BY roomNumber ASC")
+    fun getRoomsByLandlordCodeFlow(code: String): Flow<List<RoomEntity>>
 }

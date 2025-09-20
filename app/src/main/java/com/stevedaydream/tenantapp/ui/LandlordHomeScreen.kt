@@ -18,12 +18,10 @@ import androidx.compose.material.icons.filled.DocumentScanner
 import androidx.compose.material.icons.filled.Engineering
 import androidx.compose.material.icons.filled.FileCopy
 import androidx.compose.material.icons.filled.FlashOn
-import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Logout
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.NoteAdd
-import androidx.compose.material.icons.filled.PointOfSale
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.Card
@@ -55,12 +53,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import android.widget.Toast
 import com.stevedaydream.tenantapp.data.AppDatabase
+import com.stevedaydream.tenantapp.data.User
 import java.text.SimpleDateFormat
 import java.util.*
 
 @Composable
 fun LandlordHomeScreen(
-    landlordCode: String,
+    landlord: User, // <-- 【核心修改】接收整個 User 物件
     onNavigate: (String) -> Unit = {},
     onLogout: () -> Unit // 新增登出回呼
 ) {
@@ -71,6 +70,8 @@ fun LandlordHomeScreen(
     val repairReportDao = db.repairReportDao()
     val announcements by announcementDao.getAll().collectAsState(initial = emptyList())
     val repairReports by repairReportDao.getAll().collectAsState(initial = emptyList())
+
+    val landlordCode = landlord.landlordCode ?: "無" // 維持原有邏輯
 
     var expanded by remember { mutableStateOf(false) }
     var codeVisible by remember { mutableStateOf(false) }
@@ -236,11 +237,12 @@ fun LandlordHomeScreen(
                         }
                     }
                     TextButton(
-                        onClick = { onNavigate("repair_report_list") },
+                        onClick = { onNavigate("history") }, // <-- 修正後的路由
                         modifier = Modifier
                             .align(Alignment.End)
                             .padding(top = 8.dp)
                     ) { Text("查看所有回報") }
+
                 }
             }
 
@@ -272,6 +274,14 @@ fun LandlordHomeScreen(
             ) {
                 Icon(Icons.Default.FlashOn, contentDescription = "電表計算頁面", modifier = Modifier.padding(end = 8.dp))
                 Text("電表計算頁面", style = MaterialTheme.typography.bodyLarge)
+            }
+            // --- 【*** 新增此按鈕 ***】 ---
+            ElevatedButton(
+                modifier = Modifier.fillMaxWidth(),
+                onClick = { onNavigate("electricity_query") }
+            ) {
+                Icon(Icons.Default.DocumentScanner, contentDescription = "歷史電費查詢", modifier = Modifier.padding(end = 8.dp))
+                Text("歷史電費查詢", style = MaterialTheme.typography.bodyLarge)
             }
             ElevatedButton(
                 modifier = Modifier.fillMaxWidth(),

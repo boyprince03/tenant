@@ -15,18 +15,22 @@ interface ElectricMeterDao {
     @Query("SELECT * FROM electric_meter_records WHERE roomNumber = :roomNo ORDER BY recordMonth DESC LIMIT 2")
     suspend fun getLastTwoRecords(roomNo: String): List<ElectricMeterRecord>
 
-    // --- 新增的方法 ---
     @Query("SELECT * FROM electric_meter_records WHERE roomNumber = :roomNo AND recordMonth < :month ORDER BY recordMonth DESC LIMIT 1")
     suspend fun getPreviousRecord(roomNo: String, month: String): ElectricMeterRecord?
 
     @Query("SELECT * FROM electric_meter_records WHERE roomNumber = :roomNo AND recordMonth = :month LIMIT 1")
     suspend fun getRecord(roomNo: String, month: String): ElectricMeterRecord?
+
     @Query("SELECT * FROM electric_meter_records")
     fun getAllRecords(): Flow<List<ElectricMeterRecord>>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertOrUpdateRecords(records: List<ElectricMeterRecord>)
-    // 新增此行以支援 ExcelImportScreen 中的重複檢查功能
+
     @Query("SELECT * FROM electric_meter_records")
     fun getAll(): Flow<List<ElectricMeterRecord>>
 
+    // --- 【*** 新增此方法 ***】 ---
+    @Query("SELECT * FROM electric_meter_records WHERE roomNumber IN (:roomNumbers)")
+    suspend fun getRecordsForRooms(roomNumbers: List<String>): List<ElectricMeterRecord>
 }

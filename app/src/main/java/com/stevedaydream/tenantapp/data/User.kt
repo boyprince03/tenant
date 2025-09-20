@@ -13,5 +13,8 @@ data class User(
     val role: String,
     val landlordCode: String? = null, // 房東自己的序號
     var boundRoomNumber: String? = null, // 租客綁定的房號
-    var boundLandlordCode: String? = null // 租客綁定的房東序號
+    var boundLandlordCode: String? = null, // 租客綁定的房東序號
+    // --- 新增欄位 ---
+    val bankAccountName: String? = null, // 房東收款戶名
+    val bankAccountNumber: String? = null // 房東收款帳號
 )

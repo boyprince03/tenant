@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.FlashOn
 import androidx.compose.material.icons.filled.MonetizationOn
 import androidx.compose.material.icons.filled.MoreVert
@@ -72,16 +71,6 @@ fun VisitorHomeScreen(
                         expanded = menuExpanded,
                         onDismissRequest = { menuExpanded = false }
                     ) {
-                        DropdownMenuItem(
-                            text = { Text("返回") },
-                            onClick = {
-                                menuExpanded = false
-                                navController.popBackStack()
-                            },
-                            leadingIcon = {
-                                Icon(Icons.Default.ArrowBack, contentDescription = "返回 Icon")
-                            }
-                        )
                         DropdownMenuItem(
                             text = { Text("登入") },
                             onClick = {

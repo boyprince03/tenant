@@ -60,8 +60,8 @@ fun RegisterScreen(
     val roomDao = db.roomDao()
 
     Scaffold(
-        topBar = { TopAppBar(title = { Text("") },
-            actions = {
+        topBar = { TopAppBar(title = { Text("註冊") },
+            navigationIcon = {
                 IconButton(onClick = { navController.popBackStack() }) {
                     Icon(Icons.Default.ArrowBack, contentDescription = "返回")
                 }
@@ -71,10 +71,11 @@ fun RegisterScreen(
         Column(
             Modifier
                 .fillMaxSize()
+                .padding(innerPadding)
                 .padding(32.dp),
             verticalArrangement = Arrangement.Center
         ) {
-            Text("註冊", style = MaterialTheme.typography.headlineMedium)
+            // ... (UI元件保持不變)
             OutlinedTextField(
                 value = username,
                 onValueChange = { username = it },
@@ -114,6 +115,7 @@ fun RegisterScreen(
                 Text("房東")
             }
             if (errorMsg.isNotBlank()) Text(errorMsg, color = MaterialTheme.colorScheme.error)
+
             Button(
                 onClick = {
                     if (username.isBlank() || password.isBlank() || confirmPwd.isBlank()) {
@@ -146,15 +148,17 @@ fun RegisterScreen(
                             if (role == "landlord" && landlordCode != null) {
                                 val landlordCount = userDao.getAllLandlords().first().size
                                 if (landlordCount == 1) {
-                                    val unassignedRooms = roomDao.getRoomsByLandlordCode(null)
-                                    // 【核心修改】在綁定房間時，一併將狀態設定為 "可租"
+                                    // 【核心修改】使用新的 DAO 方法，查詢更精確
+                                    val unassignedRooms = roomDao.getUnassignedRooms()
                                     val updatedRooms = unassignedRooms.map {
                                         it.copy(
-                                            landlordCode = landlordCode,
-                                            status = "可租"
+                                            landlordCode = landlordCode
+                                            // 狀態已在 MainActivity 中預設，這裡不需再改
                                         )
                                     }
-                                    roomDao.insertRooms(updatedRooms)
+                                    if(updatedRooms.isNotEmpty()){
+                                        roomDao.insertRooms(updatedRooms)
+                                    }
                                 }
                             }
 
@@ -169,6 +173,7 @@ fun RegisterScreen(
                                 }
                             } else {
                                 withContext(Dispatchers.Main) {
+                                    Toast.makeText(context, "註冊成功！", Toast.LENGTH_SHORT).show()
                                     onRegisterSuccess()
                                 }
                             }

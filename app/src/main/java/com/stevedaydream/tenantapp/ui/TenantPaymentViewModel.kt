@@ -1,0 +1,116 @@
+package com.stevedaydream.tenantapp.ui
+
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.viewModelScope
+import com.stevedaydream.tenantapp.data.*
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.text.SimpleDateFormat
+import java.util.*
+
+// ViewModel Factory
+class TenantPaymentViewModelFactory(
+    private val userId: Int,
+    private val userDao: UserDao,
+    private val roomDao: RoomDao,
+    private val electricMeterDao: ElectricMeterDao,
+    private val paymentDao: PaymentDao
+) : ViewModelProvider.Factory {
+    override fun <T : ViewModel> create(modelClass: Class<T>): T {
+        if (modelClass.isAssignableFrom(TenantPaymentViewModel::class.java)) {
+            @Suppress("UNCHECKED_CAST")
+            return TenantPaymentViewModel(userId, userDao, roomDao, electricMeterDao, paymentDao) as T
+        }
+        throw IllegalArgumentException("Unknown ViewModel class")
+    }
+}
+
+// ViewModel
+class TenantPaymentViewModel(
+    private val userId: Int,
+    private val userDao: UserDao,
+    private val roomDao: RoomDao,
+    private val electricMeterDao: ElectricMeterDao,
+    private val paymentDao: PaymentDao
+) : ViewModel() {
+
+    data class PaymentUiState(
+        val roomNumber: String? = null,
+        val rentAmount: Int = 0,
+        val currentMonth: String,
+        val electricityUsage: Int? = null,
+        val electricityFee: Int? = null,
+        val totalAmount: Int? = null,
+        val paymentStatus: String = "查詢中...",
+        val isLoading: Boolean = true,
+        val errorMessage: String? = null
+    )
+
+    private val _uiState = MutableStateFlow(
+        PaymentUiState(
+            currentMonth = SimpleDateFormat("yyyy-MM", Locale.getDefault()).format(Date())
+        )
+    )
+    val uiState: StateFlow<PaymentUiState> = _uiState
+
+    init {
+        loadPaymentDetails()
+    }
+
+    private fun loadPaymentDetails() {
+        viewModelScope.launch {
+            val user = userDao.getUserById(userId)
+            if (user?.boundRoomNumber == null) {
+                _uiState.update { it.copy(errorMessage = "您尚未綁定任何房間", isLoading = false) }
+                return@launch
+            }
+
+            val roomNumber = user.boundRoomNumber!!
+            val currentMonth = _uiState.value.currentMonth
+
+            // 【*** 修正點 ***】
+            // 將資料庫查詢移至 IO 執行緒
+            val room = withContext(Dispatchers.IO) {
+                roomDao.getAllRoomsNow().find { it.roomNumber == roomNumber }
+            }
+
+            if (room == null) {
+                _uiState.update { it.copy(errorMessage = "找不到對應的房間資料", isLoading = false) }
+                return@launch
+            }
+
+            // 取得電費紀錄
+            val currentRecord = electricMeterDao.getRecord(roomNumber, currentMonth)
+            val previousRecord = electricMeterDao.getPreviousRecord(roomNumber, currentMonth)
+
+            var usage: Int? = null
+            var fee: Int? = null
+            if (currentRecord != null && previousRecord != null) {
+                usage = currentRecord.meterValue - previousRecord.meterValue
+                if (usage >= 0) {
+                    fee = usage * 5 // 每度電 5 元
+                }
+            }
+
+            val totalAmount = room.rentAmount + (fee ?: 0)
+
+            // 取得繳費狀態
+            paymentDao.getPaymentRecord(roomNumber, currentMonth).collect { payment ->
+                _uiState.update {
+                    it.copy(
+                        roomNumber = roomNumber,
+                        rentAmount = room.rentAmount,
+                        electricityUsage = usage,
+                        electricityFee = fee,
+                        totalAmount = totalAmount,
+                        paymentStatus = if (payment?.isPaid == true) "已繳費" else "未繳費",
+                        isLoading = false
+                    )
+                }
+            }
+        }
+    }
+}
