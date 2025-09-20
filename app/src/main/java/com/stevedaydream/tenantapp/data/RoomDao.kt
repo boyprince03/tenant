@@ -34,4 +34,12 @@ interface RoomDao {
     suspend fun getRoomByNumber(roomNumber: String): RoomEntity?
     @Query("SELECT * FROM rooms WHERE landlordCode = :code ORDER BY roomNumber ASC")
     fun getRoomsByLandlordCodeFlow(code: String): Flow<List<RoomEntity>>
+    // --- 【*** 新增此方法 ***】 ---
+    /**
+     * 根據房東序號刪除所有對應的房間。
+     * 用於當雲端資料為空時，清空本地對應的快取，確保資料一致性。
+     */
+    @Query("DELETE FROM rooms WHERE landlordCode = :landlordCode")
+    suspend fun deleteRoomsByLandlordCode(landlordCode: String)
+
 }

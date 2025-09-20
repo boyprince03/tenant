@@ -5,7 +5,7 @@ package com.stevedaydream.tenantapp.ui
 import android.widget.Toast
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.KeyboardOptions // 【*** 修正：新增 import ***】
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
@@ -30,7 +30,8 @@ import java.util.*
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RegisterScreen(
-    onRegisterSuccess: () -> Unit,
+    // 【*** 核心修改 1：修改回呼函式的簽名，讓它可以傳遞 User 物件 ***】
+    onRegisterSuccess: (User) -> Unit,
     authRepository: AuthRepository,
     navController: NavHostController
 ) {
@@ -151,7 +152,8 @@ fun RegisterScreen(
                                         "註冊成功！"
                                     }
                                     Toast.makeText(context, successMsg, Toast.LENGTH_LONG).show()
-                                    onRegisterSuccess()
+                                    // 【*** 核心修改 2：將註冊成功的使用者物件傳遞出去 ***】
+                                    onRegisterSuccess(registeredUser)
                                 }
                             } catch (e: Exception) {
                                 withContext(Dispatchers.Main) {

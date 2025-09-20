@@ -20,13 +20,15 @@ import com.stevedaydream.tenantapp.data.AppDatabase
 import com.stevedaydream.tenantapp.data.AuthRepository
 import com.stevedaydream.tenantapp.data.RoomRepository
 import com.stevedaydream.tenantapp.data.User
-import com.stevedaydream.tenantapp.ui.* // 匯入所有 UI
+import com.stevedaydream.tenantapp.ui.* // 汇入所有 UI
+import com.stevedaydream.tenantapp.data.UserRepository // 【*** 核心修改 1：新增 import ***】
 import kotlinx.coroutines.launch
 
 @Composable
 fun AppNavGraph(navController: NavHostController, db: AppDatabase) {
     val authRepository = remember { AuthRepository(db.userDao()) }
     val roomRepository = remember { RoomRepository(db.roomDao()) }
+    val userRepository = remember { UserRepository(db.userDao()) } // 【*** 核心修改 2：初始化 UserRepository ***】
     val context = LocalContext.current
 
     val startDestination = remember {
@@ -80,9 +82,19 @@ fun AppNavGraph(navController: NavHostController, db: AppDatabase) {
                 navController = navController
             )
         }
+        // 【*** 核心修改：更新 composable("register") 區塊 ***】
         composable("register") {
             RegisterScreen(
-                onRegisterSuccess = { navController.popBackStack() },
+                onRegisterSuccess = { user ->
+                    // 複製登入成功的導航邏輯
+                    val destination = if (user.role == "tenant") "tenant_home/${user.id}" else "landlord_home/${user.id}"
+                    navController.navigate(destination) {
+                        // 彈出到導航圖的起始點，並清除之上所有頁面
+                        popUpTo(navController.graph.findStartDestination().id) {
+                            inclusive = true
+                        }
+                    }
+                },
                 authRepository = authRepository,
                 navController = navController
             )
@@ -139,7 +151,13 @@ fun AppNavGraph(navController: NavHostController, db: AppDatabase) {
             arguments = listOf(navArgument("userId") { type = NavType.StringType })
         ) { backStackEntry ->
             val userId = backStackEntry.arguments?.getString("userId") ?: ""
-            SelectRoomScreen(userId = userId, db = db, onNavigateBack = { navController.popBackStack() })
+            // 【*** 核心修改 3：更新 SelectRoomScreen 的调用参数 ***】
+            SelectRoomScreen(
+                userId = userId,
+                userRepository = userRepository,
+                roomRepository = roomRepository,
+                onNavigateBack = { navController.popBackStack() }
+            )
         }
 
         composable(
