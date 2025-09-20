@@ -25,9 +25,8 @@ import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 import com.google.android.gms.common.api.ApiException
 import com.stevedaydream.tenantapp.data.AuthRepository
 import com.stevedaydream.tenantapp.data.User
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
+import java.util.UUID
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -44,10 +43,10 @@ fun LoginScreen(
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
 
-    // --- 【*** 核心修改 1：設定 Google 登入 ***】 ---
-    // 從 google-services.json 取得 Web Client ID
-    // 提示：通常可以在 R.string.default_web_client_id 中找到，如果沒有，請手動從 json 檔案複製
-    val webClientId = "303515436841-dg541bkfnkrdqip1rvs9tp2fnqhm929j.apps.googleusercontent.com" // <--- !! 請務必替換成您自己的 Web Client ID !!
+    var showRoleSelectionDialog by remember { mutableStateOf(false) }
+    var newUserFromGoogle by remember { mutableStateOf<User?>(null) }
+
+    val webClientId = "303515436841-dg541bkfnkrdqip1rvs9tp2fnqhm929j.apps.googleusercontent.com"
 
     val gso = remember {
         GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
@@ -57,7 +56,6 @@ fun LoginScreen(
     }
     val googleSignInClient = remember { GoogleSignIn.getClient(context, gso) }
 
-    // 設定一個 launcher 來接收 Google 登入 Activity 的回傳結果
     val googleSignInLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult(),
         onResult = { result ->
@@ -67,29 +65,56 @@ fun LoginScreen(
                     val account = task.getResult(ApiException::class.java)!!
                     val idToken = account.idToken!!
                     isLoading = true
-                    // 拿著 idToken 去跟我們的 AuthRepository 溝通
-                    scope.launch(Dispatchers.IO) {
+                    scope.launch { // 【*** 修正點 1：直接在UI協程中啟動 ***】
                         try {
-                            val user = authRepository.loginWithGoogle(idToken)
-                            withContext(Dispatchers.Main) {
-                                onLoginSuccess(user)
+                            val signInResult = authRepository.loginWithGoogle(idToken)
+                            if (signInResult.isNewUser) {
+                                newUserFromGoogle = signInResult.user
+                                showRoleSelectionDialog = true
+                                isLoading = false
+                            } else {
+                                onLoginSuccess(signInResult.user)
                             }
                         } catch (e: Exception) {
-                            withContext(Dispatchers.Main) {
-                                errorMsg = e.message ?: "Google 登入失敗"
-                                isLoading = false
-                            }
+                            errorMsg = e.message ?: "Google 登入失敗"
+                            isLoading = false
                         }
                     }
                 } catch (e: ApiException) {
-                    errorMsg = "Google 登入失敗: ${e.statusCode}"
+                    errorMsg = "Google 登入失敗，請檢查網路連線或 SHA-1 設定。錯誤碼: ${e.statusCode}"
+                    isLoading = false
                 }
             } else {
                 Toast.makeText(context, "已取消 Google 登入", Toast.LENGTH_SHORT).show()
             }
         }
     )
-    // --- 【修改結束】 ---
+
+    if (showRoleSelectionDialog && newUserFromGoogle != null) {
+        RoleSelectionDialog(
+            user = newUserFromGoogle!!,
+            onDismiss = { showRoleSelectionDialog = false },
+            onConfirm = { userWithRole ->
+                showRoleSelectionDialog = false
+                isLoading = true
+                scope.launch { // 【*** 修正點 2：直接在UI協程中啟動 ***】
+                    try {
+                        authRepository.completeGoogleRegistration(userWithRole)
+                        val successMsg = if (userWithRole.role == "landlord") {
+                            "註冊成功！您的房東序號是: ${userWithRole.landlordCode}"
+                        } else {
+                            "註冊成功！"
+                        }
+                        Toast.makeText(context, successMsg, Toast.LENGTH_LONG).show()
+                        onLoginSuccess(userWithRole)
+                    } catch (e: Exception) {
+                        errorMsg = "註冊失敗: ${e.message}"
+                        isLoading = false
+                    }
+                }
+            }
+        )
+    }
 
     Scaffold(
         topBar = {
@@ -137,22 +162,17 @@ fun LoginScreen(
             if (isLoading) {
                 CircularProgressIndicator(modifier = Modifier.align(Alignment.CenterHorizontally))
             } else {
-                // Email/密碼登入按鈕
                 Button(
                     onClick = {
                         isLoading = true
                         errorMsg = ""
-                        scope.launch(Dispatchers.IO) {
+                        scope.launch { // 【*** 修正點 3：直接在UI協程中啟動 ***】
                             try {
                                 val user = authRepository.login(email, password)
-                                withContext(Dispatchers.Main) {
-                                    onLoginSuccess(user)
-                                }
+                                onLoginSuccess(user)
                             } catch (e: Exception) {
-                                withContext(Dispatchers.Main) {
-                                    errorMsg = "帳號或密碼錯誤，請重試。"
-                                    isLoading = false
-                                }
+                                errorMsg = "帳號或密碼錯誤，請重試。"
+                                isLoading = false
                             }
                         }
                     },
@@ -163,7 +183,6 @@ fun LoginScreen(
                 Divider(modifier = Modifier.padding(vertical = 8.dp))
                 Spacer(modifier = Modifier.height(8.dp))
 
-                // --- 【*** 核心修改 2：新增 Google 登入按鈕 ***】 ---
                 OutlinedButton(
                     onClick = {
                         errorMsg = ""
@@ -172,11 +191,8 @@ fun LoginScreen(
                     },
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    // 您可以加入 Google 的 Logo 圖示讓按鈕更好看
-                    // Icon(painter = painterResource(id = R.drawable.ic_google_logo), contentDescription = "Google aign in")
                     Text("使用 Google 帳號登入")
                 }
-                // --- 【修改結束】 ---
             }
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -188,4 +204,54 @@ fun LoginScreen(
             ) { Text("還沒有帳號？點此註冊") }
         }
     }
+}
+
+@Composable
+private fun RoleSelectionDialog(
+    user: User,
+    onDismiss: () -> Unit,
+    onConfirm: (User) -> Unit
+) {
+    var selectedRole by remember { mutableStateOf("tenant") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("請選擇您的身份") },
+        text = {
+            Column {
+                Text("歡迎， ${user.username}！這是您第一次登入，請選擇您的身份以完成註冊。")
+                Spacer(Modifier.height(16.dp))
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    RadioButton(selected = selectedRole == "tenant", onClick = { selectedRole = "tenant" })
+                    Text("我是租客", Modifier.padding(end = 16.dp))
+                    RadioButton(selected = selectedRole == "landlord", onClick = { selectedRole = "landlord" })
+                    Text("我是房東")
+                }
+            }
+        },
+        confirmButton = {
+            Button(onClick = {
+                val finalUser = user.copy(
+                    role = selectedRole,
+                    landlordCode = if (selectedRole == "landlord") {
+                        UUID.randomUUID().toString().take(8).uppercase()
+                    } else {
+                        null
+                    }
+                )
+                onConfirm(finalUser)
+            }) {
+                Text("確認")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("取消")
+            }
+        }
+    )
 }

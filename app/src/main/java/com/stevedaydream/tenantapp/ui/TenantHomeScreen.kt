@@ -114,6 +114,8 @@ fun TenantHomeScreen(
                             leadingIcon = { Icon(Icons.Default.Logout, contentDescription = "登出")},
                             onClick = {
                                 expanded = false
+                                // 【*** 核心修改 2：這裡的 onLogout 會觸發 AppNavGraph 中的邏輯 ***】
+                                // 我們真正修改的地方在 AppNavGraph
                                 onLogout()
                             }
                         )

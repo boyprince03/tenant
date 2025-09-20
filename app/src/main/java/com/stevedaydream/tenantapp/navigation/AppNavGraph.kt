@@ -8,6 +8,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
@@ -24,46 +25,36 @@ import kotlinx.coroutines.launch
 @Composable
 fun AppNavGraph(navController: NavHostController, db: AppDatabase) {
     val authRepository = remember { AuthRepository(db.userDao()) }
+    val context = LocalContext.current
 
-    // --- 【核心修改：動態決定起始頁面】 ---
-    // 檢查 Firebase 當前的認證狀態
     val startDestination = remember {
         val currentUser = FirebaseAuth.getInstance().currentUser
         if (currentUser != null) {
-            // 如果使用者已登入，先導向一個載入頁面，由該頁面決定去主畫面還是登入頁
             "loading_user"
         } else {
-            // 如果未登入，則前往訪客首頁
             "visitor_home"
         }
     }
 
     NavHost(navController, startDestination = startDestination) {
 
-        // --- 【核心修改：新增載入頁面路由】 ---
         composable("loading_user") {
-            // 在這個頁面，我們從本地資料庫讀取完整的使用者資訊
             LaunchedEffect(Unit) {
                 val firebaseUser = FirebaseAuth.getInstance().currentUser
                 if (firebaseUser != null) {
-                    // 使用 Firebase UID 從 Room 資料庫中尋找對應的使用者
                     val userFromDb = db.userDao().getUserById(firebaseUser.uid)
                     if (userFromDb != null) {
-                        // 如果在本地資料庫找到使用者，則根據其角色導航到對應的主畫面
                         val destination = if (userFromDb.role == "tenant") "tenant_home/${userFromDb.id}" else "landlord_home/${userFromDb.id}"
                         navController.navigate(destination) {
-                            // 清除導航堆疊，避免使用者按返回鍵回到載入頁
                             popUpTo(navController.graph.findStartDestination().id) { inclusive = true }
                         }
                     } else {
-                        // 如果 Firebase 顯示已登入，但本地資料庫找不到該使用者
-                        // (可能發生在 App 被清除資料後)，則強制登出並導回訪客首頁
-                        authRepository.logout()
+                        // 【*** 這就是修正點：將 context 傳入 logout ***】
+                        authRepository.logout(context)
                         navController.navigate("visitor_home") { popUpTo(0) }
                     }
                 }
             }
-            // 顯示一個全螢幕的載入指示器，提升使用者體驗
             Box(
                 modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center
@@ -114,7 +105,7 @@ fun AppNavGraph(navController: NavHostController, db: AppDatabase) {
                 userId = userId,
                 onNavigate = { navController.navigate(it) },
                 onLogout = {
-                    authRepository.logout()
+                    authRepository.logout(context)
                     navController.navigate("visitor_home") { popUpTo(0) }
                 }
             )
@@ -169,7 +160,7 @@ fun AppNavGraph(navController: NavHostController, db: AppDatabase) {
                 db = db,
                 onNavigate = { navController.navigate(it) },
                 onLogout = {
-                    authRepository.logout()
+                    authRepository.logout(context)
                     navController.navigate("visitor_home") { popUpTo(0) }
                 }
             )
