@@ -18,6 +18,7 @@ import androidx.navigation.navArgument
 import com.google.firebase.auth.FirebaseAuth
 import com.stevedaydream.tenantapp.data.AppDatabase
 import com.stevedaydream.tenantapp.data.AuthRepository
+import com.stevedaydream.tenantapp.data.RoomRepository
 import com.stevedaydream.tenantapp.data.User
 import com.stevedaydream.tenantapp.ui.* // 匯入所有 UI
 import kotlinx.coroutines.launch
@@ -25,6 +26,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun AppNavGraph(navController: NavHostController, db: AppDatabase) {
     val authRepository = remember { AuthRepository(db.userDao()) }
+    val roomRepository = remember { RoomRepository(db.roomDao()) }
     val context = LocalContext.current
 
     val startDestination = remember {
@@ -158,6 +160,8 @@ fun AppNavGraph(navController: NavHostController, db: AppDatabase) {
             LandlordHomeScreenWrapper(
                 userId = userId,
                 db = db,
+                // 【新增】將 roomRepository 傳遞下去
+                roomRepository = roomRepository,
                 onNavigate = { navController.navigate(it) },
                 onLogout = {
                     authRepository.logout(context)
@@ -165,6 +169,7 @@ fun AppNavGraph(navController: NavHostController, db: AppDatabase) {
                 }
             )
         }
+
         composable("contract") {
             ContractPreviewScreen(navController = navController)
         }
@@ -172,8 +177,19 @@ fun AppNavGraph(navController: NavHostController, db: AppDatabase) {
             "room_manage/{userId}",
             arguments = listOf(navArgument("userId") { type = NavType.StringType })
         ) { backStackEntry ->
+            // 【核心修改】從 NavHostController 的 backstack 中取得 User 物件
             val userId = backStackEntry.arguments?.getString("userId") ?: ""
-            RoomManageScreen(userId = userId, db = db, navController = navController)
+            var currentUser by remember { mutableStateOf<User?>(null) }
+            LaunchedEffect(userId) {
+                currentUser = db.userDao().getUserById(userId)
+            }
+
+            RoomManageScreen(
+                // 【核心修改】傳入 Repository 和 User 物件
+                roomRepository = roomRepository,
+                currentUser = currentUser,
+                navController = navController
+            )
         }
         composable(
             "room_change_approval/{landlordId}",
@@ -256,6 +272,8 @@ fun AppNavGraph(navController: NavHostController, db: AppDatabase) {
 fun LandlordHomeScreenWrapper(
     userId: String,
     db: AppDatabase,
+    // 【新增】接收 roomRepository
+    roomRepository: RoomRepository,
     onNavigate: (String) -> Unit,
     onLogout: () -> Unit
 ) {
@@ -273,8 +291,10 @@ fun LandlordHomeScreenWrapper(
             landlord = landlord,
             onNavigate = { route ->
                 when (route) {
-                    "announcement" -> onNavigate("announcement/${landlord.id}")
+                    // 【修改】確保導航到 room_manage 時能攜帶 userId
                     "room_manage" -> onNavigate("room_manage/${landlord.id}")
+                    // ... 其他 case 保持不變
+                    "announcement" -> onNavigate("announcement/${landlord.id}")
                     "electricity_query" -> onNavigate("electricity_query/${landlord.id}")
                     "history" -> onNavigate("history/${landlord.id}")
                     "room_change_approval" -> onNavigate("room_change_approval/${landlord.id}")
