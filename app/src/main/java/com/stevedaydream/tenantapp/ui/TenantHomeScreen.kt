@@ -1,10 +1,15 @@
+// tenantapp/ui/TenantHomeScreen.kt
+
 @file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 
 package com.stevedaydream.tenantapp.ui
 
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Engineering
@@ -14,6 +19,7 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Logout
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.MonetizationOn
+import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -34,10 +40,12 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.stevedaydream.tenantapp.data.AppDatabase
+import com.stevedaydream.tenantapp.data.Announcement
 import com.stevedaydream.tenantapp.data.RoomEntity
 import com.stevedaydream.tenantapp.data.User
 import kotlinx.coroutines.Dispatchers
@@ -60,14 +68,20 @@ fun TenantHomeScreen(
     val announcementDao = db.announcementDao()
     val roomDao = db.roomDao()
     val paymentDao = db.paymentDao()
+    val roomChangeRequestDao = db.roomChangeRequestDao()
 
     var currentUser by remember { mutableStateOf<User?>(null) }
     val scope = rememberCoroutineScope()
 
     var showRoomInfoDialog by remember { mutableStateOf(false) }
+    // --- 【核心修改：新增狀態，控制 Dialog 顯示】 ---
+    var showDetailDialog by remember { mutableStateOf<Announcement?>(null) }
     var landlord by remember { mutableStateOf<User?>(null) }
     var roomDetails by remember { mutableStateOf<RoomEntity?>(null) }
     var paymentStatus by remember { mutableStateOf("查詢中...") }
+
+    val latestRequest by roomChangeRequestDao.getLatestRequestByTenantId(userId)
+        .collectAsState(initial = null)
 
 
     LaunchedEffect(userId) {
@@ -77,9 +91,9 @@ fun TenantHomeScreen(
                 currentUser = user
             }
             if (user?.boundRoomNumber != null && user.boundLandlordCode != null) {
-                val room = roomDao.getAllRooms().firstOrNull()?.find { it.roomNumber == user.boundRoomNumber }
+                val room = roomDao.getRoomByNumber(user.boundRoomNumber!!)
                 val landlordUser = userDao.getLandlordByCode(user.boundLandlordCode!!)
-                // 這裡的月份應該是動態的，暫時用 SimpleDateFormat 取得當前月份
+
                 val currentMonth = SimpleDateFormat("yyyy-MM", Locale.getDefault()).format(Date())
                 val payment = paymentDao.getPaymentRecord(user.boundRoomNumber!!, currentMonth).firstOrNull()
 
@@ -97,7 +111,6 @@ fun TenantHomeScreen(
         if (code != null) {
             announcementDao.getGlobalAndByLandlordCode(code)
         } else {
-            // 如果沒有綁定房東，只看全域公告
             announcementDao.getGlobalAndByLandlordCode("")
         }
     }.collectAsState(initial = emptyList())
@@ -121,7 +134,6 @@ fun TenantHomeScreen(
                             text = { Text("回報紀錄") },
                             onClick = {
                                 expanded = false
-                                // --- 【核心修改：更新導航路徑】 ---
                                 onNavigate("history/$userId")
                             }
                         )
@@ -146,11 +158,35 @@ fun TenantHomeScreen(
                 .padding(horizontal = 16.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            Text(
-                "歡迎！ ${currentUser?.username ?: ""}",
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold
-            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    "歡迎！ ${currentUser?.username ?: ""}",
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold
+                )
+                latestRequest?.let { request ->
+                    val (statusText, bgColor) = when (request.status) {
+                        "pending" -> "換房審核中" to MaterialTheme.colorScheme.secondary
+                        "approved" -> "換房已核准" to MaterialTheme.colorScheme.primary
+                        "rejected" -> "換房被拒絕" to MaterialTheme.colorScheme.error
+                        else -> "" to Color.Transparent
+                    }
+
+                    if (statusText.isNotEmpty()) {
+                        Text(
+                            text = statusText,
+                            color = Color.White,
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier
+                                .background(bgColor, RoundedCornerShape(50))
+                                .padding(horizontal = 10.dp, vertical = 4.dp)
+                        )
+                    }
+                }
+            }
             Text(
                 "📢 最新公告",
                 style = MaterialTheme.typography.titleLarge,
@@ -168,10 +204,19 @@ fun TenantHomeScreen(
                     if (announcements.isEmpty()) {
                         Text("目前沒有公告", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     } else {
-                        announcements.take(3).forEach {
-                            Text(it.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                            Text(it.content, maxLines = 2, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Divider(modifier = Modifier.padding(vertical = 4.dp), color = MaterialTheme.colorScheme.outlineVariant)
+                        announcements.take(3).forEachIndexed { index, ann ->
+                            // --- 【核心修改：將公告內容包裝成可點擊】 ---
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { showDetailDialog = ann }
+                            ) {
+                                Text(ann.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                                Text(ann.content, maxLines = 2, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            if (index < announcements.take(3).size - 1) {
+                                Divider(modifier = Modifier.padding(vertical = 4.dp), color = MaterialTheme.colorScheme.outlineVariant)
+                            }
                         }
                     }
                     TextButton(
@@ -182,13 +227,23 @@ fun TenantHomeScreen(
                     ) { Text("查看更多公告") }
                 }
             }
+
+            ElevatedButton(
+                modifier = Modifier.fillMaxWidth(),
+                onClick = { showRoomInfoDialog = true },
+                enabled = currentUser?.boundRoomNumber != null
+            ) {
+                Icon(Icons.Default.Info, contentDescription = "租屋資訊", modifier = Modifier.padding(end = 8.dp))
+                Text("查看我的租屋資訊", style = MaterialTheme.typography.bodyLarge)
+            }
+
             if (currentUser?.boundRoomNumber != null) {
                 ElevatedButton(
                     modifier = Modifier.fillMaxWidth(),
-                    onClick = { showRoomInfoDialog = true }
+                    onClick = { onNavigate("request_room_change/$userId") }
                 ) {
-                    Icon(Icons.Default.Info, contentDescription = "房間資訊", modifier = Modifier.padding(end = 8.dp))
-                    Text("房間基本資訊", style = MaterialTheme.typography.bodyLarge)
+                    Icon(Icons.Default.SwapHoriz, contentDescription = "更換房間", modifier = Modifier.padding(end = 8.dp))
+                    Text("申請更換房間", style = MaterialTheme.typography.bodyLarge)
                 }
             }
             ElevatedButton(
@@ -200,14 +255,17 @@ fun TenantHomeScreen(
             }
             ElevatedButton(
                 modifier = Modifier.fillMaxWidth(),
-                onClick = { onNavigate("select_room/$userId") }
+                onClick = { onNavigate("select_room/$userId") },
+                enabled = currentUser?.boundRoomNumber == null
             ) {
                 Icon(Icons.Default.HomeWork, contentDescription = "綁定房間", modifier = Modifier.padding(end = 8.dp))
-                Text("綁定房東及房間", style = MaterialTheme.typography.bodyLarge)
+                Text(
+                    if (currentUser?.boundRoomNumber != null) "已綁定房間" else "綁定房東及房間",
+                    style = MaterialTheme.typography.bodyLarge
+                )
             }
             ElevatedButton(
                 modifier = Modifier.fillMaxWidth(),
-                // --- 【核心修改：更新導航路徑】 ---
                 onClick = { onNavigate("home/$userId") }
             ) {
                 Icon(Icons.Default.Engineering, contentDescription = "修繕回報", modifier = Modifier.padding(end = 8.dp))
@@ -231,6 +289,21 @@ fun TenantHomeScreen(
                 onDismiss = { showRoomInfoDialog = false }
             )
         }
+    }
+    // --- 【核心修改：新增詳細內容 Dialog】 ---
+    if (showDetailDialog != null) {
+        AlertDialog(
+            onDismissRequest = { showDetailDialog = null },
+            title = { Text(showDetailDialog!!.title, fontWeight = FontWeight.Bold) },
+            text = {
+                Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                    Text(showDetailDialog!!.content, style = MaterialTheme.typography.bodyLarge)
+                }
+            },
+            confirmButton = {
+                Button(onClick = { showDetailDialog = null }) { Text("關閉") }
+            }
+        )
     }
 }
 

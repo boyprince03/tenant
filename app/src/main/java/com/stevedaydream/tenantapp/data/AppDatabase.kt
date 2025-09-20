@@ -12,8 +12,9 @@ import androidx.room.RoomDatabase
         Announcement::class,
         User::class,
         Payment::class,
+        RoomChangeRequest::class // <-- 新增 Entity
     ],
-    version = 16, // <-- 版本升級到 13
+    version = 17, // <-- 版本升級
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -24,6 +25,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun announcementDao(): AnnouncementDao
     abstract fun userDao(): UserDao
     abstract fun paymentDao(): PaymentDao
+    abstract fun roomChangeRequestDao(): RoomChangeRequestDao // <-- 新增 DAO
 
 
     companion object {

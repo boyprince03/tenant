@@ -82,7 +82,8 @@ fun AnnouncementScreen(
 
     val scope = rememberCoroutineScope()
     var showEditDialog by remember { mutableStateOf(false) }
-    var showDetailDialog by remember { mutableStateOf<Announcement?>(null) } // 用來顯示詳細內容的 Dialog
+    // --- 【核心】用來顯示詳細內容的 Dialog 狀態 ---
+    var showDetailDialog by remember { mutableStateOf<Announcement?>(null) }
     var editing: Announcement? by remember { mutableStateOf(null) }
 
     val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
@@ -99,7 +100,6 @@ fun AnnouncementScreen(
             )
         },
         floatingActionButton = {
-            // 只有房東和管理員能看到新增按鈕
             if (canEdit) {
                 ElevatedButton(
                     onClick = {
@@ -141,8 +141,8 @@ fun AnnouncementScreen(
                         Card(
                             modifier = Modifier
                                 .fillMaxWidth()
+                                // --- 【核心】點擊卡片，打開詳細內容 Dialog ---
                                 .clickable {
-                                    // 點擊卡片，打開詳細內容 Dialog
                                     showDetailDialog = ann
                                 },
                             elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
@@ -178,7 +178,7 @@ fun AnnouncementScreen(
         }
     }
 
-    // 詳細內容 Dialog
+    // --- 【核心】詳細內容 Dialog ---
     if (showDetailDialog != null) {
         AlertDialog(
             onDismissRequest = { showDetailDialog = null },
@@ -192,7 +192,6 @@ fun AnnouncementScreen(
                 Button(onClick = { showDetailDialog = null }) { Text("關閉") }
             },
             dismissButton = {
-                // 只有房東且是自己發的公告，或管理員才能編輯
                 val canEditThis = canEdit && (showDetailDialog!!.landlordCode == landlordCode || showDetailDialog!!.landlordCode == null)
                 if (canEditThis) {
                     TextButton(onClick = {
@@ -239,7 +238,6 @@ fun AnnouncementScreen(
                     onClick = {
                         scope.launch {
                             if (editing == null) {
-                                // 新增時，寫入 landlordCode
                                 dao.insert(Announcement(title = title, content = content, landlordCode = landlordCode))
                             } else {
                                 dao.update(editing!!.copy(title = title, content = content))

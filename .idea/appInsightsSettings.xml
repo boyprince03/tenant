@@ -9,10 +9,10 @@
             <InsightsFilterSettings>
               <option name="connection">
                 <ConnectionSetting>
-                  <option name="appId" value="PLACEHOLDER" />
-                  <option name="mobileSdkAppId" value="" />
-                  <option name="projectId" value="" />
-                  <option name="projectNumber" value="" />
+                  <option name="appId" value="com.stevedaydream.tenantapp" />
+                  <option name="mobileSdkAppId" value="1:303515436841:android:c6a725e4e7e9d1eea5d938" />
+                  <option name="projectId" value="device-streaming-e921c475" />
+                  <option name="projectNumber" value="303515436841" />
                 </ConnectionSetting>
               </option>
               <option name="signal" value="SIGNAL_UNSPECIFIED" />

@@ -1,8 +1,11 @@
 plugins {
-    id("kotlin-kapt") // 新增這一行！
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
+    // Kapt for Room
+    id("kotlin-kapt") // 新增這一行！
+    //firebase
+    id("com.google.gms.google-services")
 }
 
 android {
@@ -77,6 +80,22 @@ dependencies {
 //    excel import
     implementation ("net.sourceforge.jexcelapi:jxl:2.6.12")
     implementation ("androidx.compose.material:material-icons-extended:<compose_version>")
+    // Import the Firebase BoM
+    // 導入 Firebase BOM (Bill of Materials)，它會自動管理 Firebase 套件的版本
+    implementation(platform("com.google.firebase:firebase-bom:33.1.0"))
+
+    // 加入 Firebase Cloud Messaging (FCM) 的依賴
+    implementation("com.google.firebase:firebase-messaging-ktx")
+
+    // Firebase Authentication - 用於使用者登入註冊
+    implementation ("com.google.firebase:firebase-auth-ktx")
+
+    // Firebase Firestore - 用於雲端資料庫
+    implementation ("com.google.firebase:firebase-firestore-ktx")
+
+    // 如果您需要非同步操作 (通常都需要)，請確保有這個
+    implementation ("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.7.1")
+
 
 //    implementation ("com.google.api-client:google-api-client-android:1.33.0")
 //    implementation ("com.google.api-client:google-api-client-gson:1.33.0")

@@ -24,6 +24,8 @@ import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavType
 import androidx.navigation.navArgument
 import com.stevedaydream.tenantapp.data.User
+import com.stevedaydream.tenantapp.ui.RoomChangeApprovalScreen
+import com.stevedaydream.tenantapp.ui.RoomChangeRequestScreen
 import com.stevedaydream.tenantapp.ui.TenantPaymentScreen
 
 import com.stevedaydream.tenantapp.ui.VisitorHomeScreen
@@ -208,6 +210,31 @@ fun AppNavGraph(navController: NavHostController, db: AppDatabase) {
                 navController = navController
             )
         }
+        // 【新增】房客申請更換房間頁面
+        composable(
+            "request_room_change/{userId}",
+            arguments = listOf(navArgument("userId") { type = NavType.IntType })
+        ) { backStackEntry ->
+            val userId = backStackEntry.arguments?.getInt("userId") ?: 0
+            RoomChangeRequestScreen(
+                userId = userId,
+                db = db,
+                navController = navController
+            )
+        }
+
+        // 【新增】房東審核頁面
+        composable(
+            "room_change_approval/{landlordId}",
+            arguments = listOf(navArgument("landlordId") { type = NavType.IntType })
+        ) { backStackEntry ->
+            val landlordId = backStackEntry.arguments?.getInt("landlordId") ?: 0
+            RoomChangeApprovalScreen(
+                landlordId = landlordId,
+                db = db,
+                navController = navController
+            )
+        }
     }
 }
 
@@ -237,6 +264,7 @@ fun LandlordHomeScreenWrapper(
                     "electricity_query" -> onNavigate("electricity_query/${it.id}")
                     // --- 【核心修改：更新導航路徑】 ---
                     "history" -> onNavigate("history/${it.id}")
+                    "room_change_approval" -> onNavigate("room_change_approval/${it.id}") // 新增
                     else -> onNavigate(route)
                 }
             },

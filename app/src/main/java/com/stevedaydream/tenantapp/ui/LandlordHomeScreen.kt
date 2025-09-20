@@ -53,10 +53,12 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import android.widget.Toast
+import androidx.compose.foundation.clickable
 import com.stevedaydream.tenantapp.data.AppDatabase
 import com.stevedaydream.tenantapp.data.User
 import java.text.SimpleDateFormat
 import java.util.*
+import androidx.compose.material.icons.filled.SwapHoriz // 新增 import
 
 @Composable
 fun LandlordHomeScreen(
@@ -71,6 +73,10 @@ fun LandlordHomeScreen(
     val repairReportDao = db.repairReportDao()
     val announcements by announcementDao.getAll().collectAsState(initial = emptyList())
     val repairReports by repairReportDao.getAll().collectAsState(initial = emptyList())
+    val requestDao = db.roomChangeRequestDao() // 新增 DAO
+    val changeRequests by requestDao.getRequestsByLandlord(landlord.landlordCode ?: "")
+        .collectAsState(initial = emptyList())
+    val pendingRequests = changeRequests.filter { it.status == "pending" }
 
     val landlordCode = landlord.landlordCode ?: "無"
 
@@ -156,6 +162,28 @@ fun LandlordHomeScreen(
                             imageVector = Icons.Default.FileCopy,
                             contentDescription = "複製序號"
                         )
+                    }
+                }
+            }
+            // 【新增】房間更換請求通知卡片
+            if (pendingRequests.isNotEmpty()) {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onNavigate("room_change_approval/${landlord.id}") },
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(16.dp).fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column {
+                            Text("房間更換請求", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                            Text("您有 ${pendingRequests.size} 則新的請求待審核", style = MaterialTheme.typography.bodyMedium)
+                        }
+                        Icon(Icons.Default.SwapHoriz, contentDescription = null)
                     }
                 }
             }

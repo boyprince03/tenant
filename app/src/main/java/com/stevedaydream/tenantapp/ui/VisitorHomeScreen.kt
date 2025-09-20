@@ -1,6 +1,7 @@
 @file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 package com.stevedaydream.tenantapp.ui
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -13,6 +14,8 @@ import androidx.compose.material.icons.filled.FlashOn
 import androidx.compose.material.icons.filled.MonetizationOn
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Divider
@@ -37,6 +40,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
+import com.stevedaydream.tenantapp.data.Announcement
 import com.stevedaydream.tenantapp.data.AnnouncementDao
 import com.stevedaydream.tenantapp.data.RoomDao
 import com.stevedaydream.tenantapp.data.User
@@ -56,6 +60,9 @@ fun VisitorHomeScreen(
     val announcements by announcementDao.getAll().collectAsState(initial = emptyList())
     val rooms by roomDao.getAllRooms().collectAsState(initial = emptyList())
     var menuExpanded by remember { mutableStateOf(false) }
+
+    // --- 【核心修改：新增狀態，控制 Dialog 顯示】 ---
+    var showDetailDialog by remember { mutableStateOf<Announcement?>(null) }
 
     Scaffold(
         topBar = {
@@ -90,7 +97,7 @@ fun VisitorHomeScreen(
             modifier = Modifier
                 .padding(innerPadding)
                 .fillMaxSize()
-                .verticalScroll(rememberScrollState()) // 【核心修改】加入這行使其可以捲動
+                .verticalScroll(rememberScrollState())
                 .padding(horizontal = 16.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
@@ -108,22 +115,31 @@ fun VisitorHomeScreen(
                     if (announcements.isEmpty()) {
                         Text("目前沒有公告", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     } else {
-                        announcements.take(3).forEach {
-                            Text(
-                                it.title,
-                                style = MaterialTheme.typography.bodyLarge,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                            Text(
-                                it.content,
-                                maxLines = 2,
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Divider(
-                                modifier = Modifier.padding(vertical = 4.dp),
-                                color = MaterialTheme.colorScheme.outlineVariant
-                            )
+                        announcements.take(3).forEachIndexed { index, ann ->
+                            // --- 【核心修改：將公告內容包裝成可點擊】 ---
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { showDetailDialog = ann }
+                            ) {
+                                Text(
+                                    ann.title,
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                Text(
+                                    ann.content,
+                                    maxLines = 2,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            if (index < announcements.take(3).size - 1) {
+                                Divider(
+                                    modifier = Modifier.padding(vertical = 4.dp),
+                                    color = MaterialTheme.colorScheme.outlineVariant
+                                )
+                            }
                         }
                     }
                 }
@@ -215,5 +231,21 @@ fun VisitorHomeScreen(
                 Text("我要繳費", style = MaterialTheme.typography.bodyLarge)
             }
         }
+    }
+
+    // --- 【核心修改：新增詳細內容 Dialog】 ---
+    if (showDetailDialog != null) {
+        AlertDialog(
+            onDismissRequest = { showDetailDialog = null },
+            title = { Text(showDetailDialog!!.title, fontWeight = FontWeight.Bold) },
+            text = {
+                Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                    Text(showDetailDialog!!.content, style = MaterialTheme.typography.bodyLarge)
+                }
+            },
+            confirmButton = {
+                Button(onClick = { showDetailDialog = null }) { Text("關閉") }
+            }
+        )
     }
 }
