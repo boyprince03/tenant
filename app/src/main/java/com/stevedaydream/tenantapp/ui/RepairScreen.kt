@@ -1,3 +1,5 @@
+// tenantapp/ui/RepairScreen.kt
+
 @file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 package com.stevedaydream.tenantapp.ui
 
@@ -15,14 +17,35 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
+import com.stevedaydream.tenantapp.data.AppDatabase
 import com.stevedaydream.tenantapp.data.RepairReport
 import com.stevedaydream.tenantapp.data.RepairReportDao
+import com.stevedaydream.tenantapp.data.User
 import kotlinx.coroutines.launch
 
 @Composable
-fun RepairScreen(navController: NavHostController, dao: RepairReportDao) {
+fun RepairScreen(
+    navController: NavHostController,
+    dao: RepairReportDao,
+    db: AppDatabase, // 傳入 db
+    userId: Int      // 傳入 userId
+) {
+    // --- 【核心修改：自動帶入使用者資料】 ---
+    var currentUser by remember { mutableStateOf<User?>(null) }
     var tenantName by remember { mutableStateOf("") }
     var roomNumber by remember { mutableStateOf("") }
+
+    LaunchedEffect(userId) {
+        if (userId != 0) {
+            currentUser = db.userDao().getUserById(userId)
+            currentUser?.let {
+                tenantName = it.username
+                roomNumber = it.boundRoomNumber ?: ""
+            }
+        }
+    }
+    // --- 【修改結束】 ---
+
     var issue by remember { mutableStateOf("") }
     var description by remember { mutableStateOf("") }
     val scope = rememberCoroutineScope()
@@ -68,14 +91,16 @@ fun RepairScreen(navController: NavHostController, dao: RepairReportDao) {
                         onValueChange = { tenantName = it },
                         label = { Text("您的姓名") },
                         modifier = Modifier.fillMaxWidth(),
-                        leadingIcon = { Icon(Icons.Default.Person, contentDescription = "姓名") }
+                        leadingIcon = { Icon(Icons.Default.Person, contentDescription = "姓名") },
+                        enabled = false // 自動帶入，不允許修改
                     )
                     OutlinedTextField(
                         value = roomNumber,
                         onValueChange = { roomNumber = it },
                         label = { Text("房號") },
                         modifier = Modifier.fillMaxWidth(),
-                        leadingIcon = { Icon(Icons.Default.Home, contentDescription = "房號") }
+                        leadingIcon = { Icon(Icons.Default.Home, contentDescription = "房號") },
+                        enabled = false // 自動帶入，不允許修改
                     )
                     OutlinedTextField(
                         value = issue,
@@ -111,8 +136,9 @@ fun RepairScreen(navController: NavHostController, dao: RepairReportDao) {
                             )
                         )
                         Toast.makeText(context, "回報成功！", Toast.LENGTH_SHORT).show()
-                        // 清空
-                        tenantName = ""; roomNumber = ""; issue = ""; description = ""
+                        // 清空部分欄位
+                        issue = ""
+                        description = ""
                     }
                 },
                 modifier = Modifier
@@ -124,7 +150,8 @@ fun RepairScreen(navController: NavHostController, dao: RepairReportDao) {
             }
 
             OutlinedButton(
-                onClick = { navController.navigate("history") },
+                // --- 【核心修改：修正導航路徑】 ---
+                onClick = { navController.navigate("history/$userId") },
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Icon(Icons.Default.History, contentDescription = "歷史紀錄", modifier = Modifier.padding(end = 8.dp))

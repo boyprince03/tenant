@@ -46,6 +46,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
@@ -59,9 +60,9 @@ import java.util.*
 
 @Composable
 fun LandlordHomeScreen(
-    landlord: User, // <-- 【核心修改】接收整個 User 物件
+    landlord: User,
     onNavigate: (String) -> Unit = {},
-    onLogout: () -> Unit // 新增登出回呼
+    onLogout: () -> Unit
 ) {
     val clipboardManager = LocalClipboardManager.current
     val context = LocalContext.current
@@ -71,7 +72,7 @@ fun LandlordHomeScreen(
     val announcements by announcementDao.getAll().collectAsState(initial = emptyList())
     val repairReports by repairReportDao.getAll().collectAsState(initial = emptyList())
 
-    val landlordCode = landlord.landlordCode ?: "無" // 維持原有邏輯
+    val landlordCode = landlord.landlordCode ?: "無"
 
     var expanded by remember { mutableStateOf(false) }
     var codeVisible by remember { mutableStateOf(false) }
@@ -99,10 +100,10 @@ fun LandlordHomeScreen(
                             text = { Text("回報紀錄") },
                             onClick = {
                                 expanded = false
+                                // --- 【核心修改：這裡的 onNavigate 會被 Wrapper 攔截並加上 userId】 ---
                                 onNavigate("history")
                             }
                         )
-                        // 【核心修改】新增登出按鈕
                         DropdownMenuItem(
                             text = { Text("登出") },
                             leadingIcon = { Icon(Icons.Default.Logout, contentDescription = "登出")},
@@ -124,7 +125,7 @@ fun LandlordHomeScreen(
                 .padding(horizontal = 16.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // 房東序號顯示區
+            // ... (房東序號顯示區)
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.fillMaxWidth(),
@@ -208,11 +209,28 @@ fun LandlordHomeScreen(
                     } else {
                         repairReports.take(3).forEach { report ->
                             Column(Modifier.fillMaxWidth()) {
-                                Text(
-                                    "房號: ${report.roomNumber} - ${report.issue}",
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.SemiBold
-                                )
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ){
+                                    Text(
+                                        "房號: ${report.roomNumber} - ${report.issue}",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                    val statusColor = when (report.status) {
+                                        "已完成" -> Color.Gray
+                                        "處理中" -> MaterialTheme.colorScheme.primary
+                                        else -> MaterialTheme.colorScheme.error
+                                    }
+                                    Text(
+                                        text = report.status,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = statusColor
+                                    )
+                                }
                                 Text(
                                     "租客: ${report.tenantName}",
                                     style = MaterialTheme.typography.bodyMedium,
@@ -237,7 +255,7 @@ fun LandlordHomeScreen(
                         }
                     }
                     TextButton(
-                        onClick = { onNavigate("history") }, // <-- 修正後的路由
+                        onClick = { onNavigate("history") },
                         modifier = Modifier
                             .align(Alignment.End)
                             .padding(top = 8.dp)
@@ -275,7 +293,6 @@ fun LandlordHomeScreen(
                 Icon(Icons.Default.FlashOn, contentDescription = "電表計算頁面", modifier = Modifier.padding(end = 8.dp))
                 Text("電表計算頁面", style = MaterialTheme.typography.bodyLarge)
             }
-            // --- 【*** 新增此按鈕 ***】 ---
             ElevatedButton(
                 modifier = Modifier.fillMaxWidth(),
                 onClick = { onNavigate("electricity_query") }

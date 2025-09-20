@@ -13,7 +13,7 @@ import androidx.room.RoomDatabase
         User::class,
         Payment::class,
     ],
-    version = 15, // <-- 版本升級到 13
+    version = 16, // <-- 版本升級到 13
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {

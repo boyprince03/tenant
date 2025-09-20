@@ -44,6 +44,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 @Composable
 fun TenantHomeScreen(
@@ -61,7 +64,6 @@ fun TenantHomeScreen(
     var currentUser by remember { mutableStateOf<User?>(null) }
     val scope = rememberCoroutineScope()
 
-    // --- 新增狀態 ---
     var showRoomInfoDialog by remember { mutableStateOf(false) }
     var landlord by remember { mutableStateOf<User?>(null) }
     var roomDetails by remember { mutableStateOf<RoomEntity?>(null) }
@@ -77,7 +79,9 @@ fun TenantHomeScreen(
             if (user?.boundRoomNumber != null && user.boundLandlordCode != null) {
                 val room = roomDao.getAllRooms().firstOrNull()?.find { it.roomNumber == user.boundRoomNumber }
                 val landlordUser = userDao.getLandlordByCode(user.boundLandlordCode!!)
-                val payment = paymentDao.getPaymentRecord(user.boundRoomNumber!!, "2025-07").firstOrNull() // 這裡應使用當前月份
+                // 這裡的月份應該是動態的，暫時用 SimpleDateFormat 取得當前月份
+                val currentMonth = SimpleDateFormat("yyyy-MM", Locale.getDefault()).format(Date())
+                val payment = paymentDao.getPaymentRecord(user.boundRoomNumber!!, currentMonth).firstOrNull()
 
                 withContext(Dispatchers.Main) {
                     roomDetails = room
@@ -93,6 +97,7 @@ fun TenantHomeScreen(
         if (code != null) {
             announcementDao.getGlobalAndByLandlordCode(code)
         } else {
+            // 如果沒有綁定房東，只看全域公告
             announcementDao.getGlobalAndByLandlordCode("")
         }
     }.collectAsState(initial = emptyList())
@@ -116,7 +121,8 @@ fun TenantHomeScreen(
                             text = { Text("回報紀錄") },
                             onClick = {
                                 expanded = false
-                                onNavigate("history")
+                                // --- 【核心修改：更新導航路徑】 ---
+                                onNavigate("history/$userId")
                             }
                         )
                         DropdownMenuItem(
@@ -136,7 +142,7 @@ fun TenantHomeScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
-                .verticalScroll(rememberScrollState()) // <-- 加入捲動
+                .verticalScroll(rememberScrollState())
                 .padding(horizontal = 16.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
@@ -145,7 +151,6 @@ fun TenantHomeScreen(
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold
             )
-            // 公告卡片 (保持不變)
             Text(
                 "📢 最新公告",
                 style = MaterialTheme.typography.titleLarge,
@@ -177,8 +182,6 @@ fun TenantHomeScreen(
                     ) { Text("查看更多公告") }
                 }
             }
-
-            // --- 新增按鈕 ---
             if (currentUser?.boundRoomNumber != null) {
                 ElevatedButton(
                     modifier = Modifier.fillMaxWidth(),
@@ -188,8 +191,6 @@ fun TenantHomeScreen(
                     Text("房間基本資訊", style = MaterialTheme.typography.bodyLarge)
                 }
             }
-
-
             ElevatedButton(
                 modifier = Modifier.fillMaxWidth(),
                 onClick = { onNavigate("tenant_payment/$userId") }
@@ -197,7 +198,6 @@ fun TenantHomeScreen(
                 Icon(Icons.Default.MonetizationOn, contentDescription = "繳費查詢", modifier = Modifier.padding(end = 8.dp))
                 Text("當月繳費查詢", style = MaterialTheme.typography.bodyLarge)
             }
-
             ElevatedButton(
                 modifier = Modifier.fillMaxWidth(),
                 onClick = { onNavigate("select_room/$userId") }
@@ -205,17 +205,16 @@ fun TenantHomeScreen(
                 Icon(Icons.Default.HomeWork, contentDescription = "綁定房間", modifier = Modifier.padding(end = 8.dp))
                 Text("綁定房東及房間", style = MaterialTheme.typography.bodyLarge)
             }
-
             ElevatedButton(
                 modifier = Modifier.fillMaxWidth(),
-                onClick = { onNavigate("home") }
+                // --- 【核心修改：更新導航路徑】 ---
+                onClick = { onNavigate("home/$userId") }
             ) {
                 Icon(Icons.Default.Engineering, contentDescription = "修繕回報", modifier = Modifier.padding(end = 8.dp))
                 Text("前往填寫修繕回報", style = MaterialTheme.typography.bodyLarge)
             }
             ElevatedButton(
                 modifier = Modifier.fillMaxWidth(),
-                // --- 【*** 核心修改：更新 onClick ***】 ---
                 onClick = { onNavigate("electricity_query/$userId") }
             ) {
                 Icon(Icons.Default.FlashOn, contentDescription = "電費查詢", modifier = Modifier.padding(end = 8.dp))
@@ -223,7 +222,6 @@ fun TenantHomeScreen(
             }
         }
 
-        // --- 新增 Dialog ---
         if (showRoomInfoDialog) {
             RoomInfoDialog(
                 room = roomDetails,
@@ -236,7 +234,6 @@ fun TenantHomeScreen(
     }
 }
 
-// --- 新增 Composable 函數 ---
 @Composable
 fun RoomInfoDialog(
     room: RoomEntity?,
@@ -246,7 +243,6 @@ fun RoomInfoDialog(
     onDismiss: () -> Unit
 ) {
     if (room == null || landlord == null || tenant == null) {
-        // 可以顯示一個載入中或錯誤的提示
         AlertDialog(
             onDismissRequest = onDismiss,
             title = { Text("讀取中...") },

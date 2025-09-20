@@ -32,7 +32,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun AppNavGraph(navController: NavHostController, db: AppDatabase) {
     NavHost(navController, startDestination = "visitor_home") {
-        // ... (login, register, etc. 保持不變)
+        // ... (login, register, homescreens etc. 保持不變)
         composable("login") {
             LoginScreen(
                 onLoginSuccess = { user ->
@@ -92,12 +92,42 @@ fun AppNavGraph(navController: NavHostController, db: AppDatabase) {
             )
         }
 
-        composable("home") {
-            RepairScreen(navController, db.repairReportDao())
+        // --- 【核心修改：修改此路由】 ---
+        composable(
+            "home/{userId}",
+            arguments = listOf(navArgument("userId") { type = NavType.IntType })
+        ) { backStackEntry ->
+            val userId = backStackEntry.arguments?.getInt("userId") ?: 0
+            RepairScreen(
+                navController = navController,
+                dao = db.repairReportDao(),
+                db = db, // 傳入 db 以便查詢使用者資料
+                userId = userId
+            )
         }
-        composable("history") {
-            RepairHistoryScreen(navController, db.repairReportDao())
+
+        // --- 【核心修改：修改此路由以傳遞 userId】 ---
+        composable(
+            "history/{userId}",
+            arguments = listOf(navArgument("userId") { type = NavType.IntType })
+        ) { backStackEntry ->
+            val userId = backStackEntry.arguments?.getInt("userId") ?: 0
+            var user by remember { mutableStateOf<User?>(null) }
+
+            // 取得使用者資料來判斷角色
+            LaunchedEffect(userId) {
+                user = db.userDao().getUserById(userId)
+            }
+
+            user?.let {
+                RepairHistoryScreen(
+                    navController = navController,
+                    dao = db.repairReportDao(),
+                    isLandlord = it.role == "landlord" // 傳入角色判斷結果
+                )
+            }
         }
+
         composable("contract") {
             ContractPreviewScreen(navController)
         }
@@ -122,7 +152,6 @@ fun AppNavGraph(navController: NavHostController, db: AppDatabase) {
                 roomDao = db.roomDao(),
                 meterDao = db.electricMeterDao(),
                 navController = navController,
-                // 【*** 核心修改 ***】將 userId 傳遞到電費計算頁，雖然此頁沒用到，但為了讓它能導航到查詢頁
                 onNavigateToQuery = { userId -> navController.navigate("electricity_query/$userId") },
                 userRole = userRole
             )
@@ -146,7 +175,6 @@ fun AppNavGraph(navController: NavHostController, db: AppDatabase) {
             )
         }
 
-        // --- 【*** 核心修改：修改此路由 ***】 ---
         composable(
             "electricity_query/{userId}",
             arguments = listOf(navArgument("userId") { type = NavType.IntType })
@@ -201,13 +229,14 @@ fun LandlordHomeScreenWrapper(
 
     user?.let {
         LandlordHomeScreen(
-            landlord = it, // <-- 傳入整個 user 物件
+            landlord = it,
             onNavigate = { route ->
                 when (route) {
                     "announcement" -> onNavigate("announcement/${it.id}")
                     "room_manage" -> onNavigate("room_manage/${it.id}")
-                    // --- 【*** 核心修改：新增導航 ***】 ---
                     "electricity_query" -> onNavigate("electricity_query/${it.id}")
+                    // --- 【核心修改：更新導航路徑】 ---
+                    "history" -> onNavigate("history/${it.id}")
                     else -> onNavigate(route)
                 }
             },
