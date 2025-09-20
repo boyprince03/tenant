@@ -12,31 +12,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Engineering
-import androidx.compose.material.icons.filled.FlashOn
-import androidx.compose.material.icons.filled.HomeWork
-import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.Logout
-import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.MonetizationOn
-import androidx.compose.material.icons.filled.SwapHoriz
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Divider
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ElevatedButton
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.LocalContentColor
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -44,21 +21,17 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.stevedaydream.tenantapp.data.AppDatabase
-import com.stevedaydream.tenantapp.data.Announcement
-import com.stevedaydream.tenantapp.data.RoomEntity
-import com.stevedaydream.tenantapp.data.User
+import com.stevedaydream.tenantapp.data.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
+import java.util.*
 
 @Composable
 fun TenantHomeScreen(
-    userId: Int,
+    userId: String, // 【*** 修正：Int -> String ***】
     onNavigate: (String) -> Unit = {},
     onLogout: () -> Unit
 ) {
@@ -74,7 +47,6 @@ fun TenantHomeScreen(
     val scope = rememberCoroutineScope()
 
     var showRoomInfoDialog by remember { mutableStateOf(false) }
-    // --- 【核心修改：新增狀態，控制 Dialog 顯示】 ---
     var showDetailDialog by remember { mutableStateOf<Announcement?>(null) }
     var landlord by remember { mutableStateOf<User?>(null) }
     var roomDetails by remember { mutableStateOf<RoomEntity?>(null) }
@@ -205,7 +177,6 @@ fun TenantHomeScreen(
                         Text("目前沒有公告", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     } else {
                         announcements.take(3).forEachIndexed { index, ann ->
-                            // --- 【核心修改：將公告內容包裝成可點擊】 ---
                             Column(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -220,7 +191,7 @@ fun TenantHomeScreen(
                         }
                     }
                     TextButton(
-                        onClick = { onNavigate("announcement/${currentUser?.id ?: 0}") },
+                        onClick = { onNavigate("announcement/$userId") }, // 【*** 修正：使用正确的 userId ***】
                         modifier = Modifier
                             .align(Alignment.End)
                             .padding(top = 8.dp)
@@ -290,7 +261,6 @@ fun TenantHomeScreen(
             )
         }
     }
-    // --- 【核心修改：新增詳細內容 Dialog】 ---
     if (showDetailDialog != null) {
         AlertDialog(
             onDismissRequest = { showDetailDialog = null },
@@ -307,6 +277,7 @@ fun TenantHomeScreen(
     }
 }
 
+// RoomInfoDialog and InfoRow remain unchanged...
 @Composable
 fun RoomInfoDialog(
     room: RoomEntity?,

@@ -5,16 +5,17 @@ import androidx.room.PrimaryKey
 
 @Entity(tableName = "users")
 data class User(
-    @PrimaryKey(autoGenerate = true) val id: Int = 0,
-    val username: String,
-    val password: String,
-    val phone: String,
-    val idNumber: String,
-    val role: String,
-    val landlordCode: String? = null, // 房東自己的序號
-    var boundRoomNumber: String? = null, // 租客綁定的房號
-    var boundLandlordCode: String? = null, // 租客綁定的房東序號
-    // --- 新增欄位 ---
-    val bankAccountName: String? = null, // 房東收款戶名
-    val bankAccountNumber: String? = null // 房東收款帳號
+    // 【核心修改】主鍵改為 String，用來存放 Firebase UID
+    @PrimaryKey val id: String = "",
+
+    // 【核心修改】為所有欄位提供預設值，並移除 password
+    val username: String = "",
+    val phone: String = "",
+    val idNumber: String = "",
+    val role: String = "",
+    val landlordCode: String? = null,
+    var boundRoomNumber: String? = null,
+    var boundLandlordCode: String? = null,
+    val bankAccountName: String? = null,
+    val bankAccountNumber: String? = null
 )

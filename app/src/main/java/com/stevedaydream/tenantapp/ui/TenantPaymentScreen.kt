@@ -19,7 +19,7 @@ import com.stevedaydream.tenantapp.data.AppDatabase
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TenantPaymentScreen(
-    userId: Int,
+    userId: String,
     db: AppDatabase,
     navController: NavHostController
 ) {

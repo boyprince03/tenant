@@ -23,7 +23,7 @@ import kotlinx.coroutines.launch
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RoomChangeRequestScreen(
-    userId: Int,
+    userId: String,
     db: AppDatabase,
     navController: NavHostController
 ) {

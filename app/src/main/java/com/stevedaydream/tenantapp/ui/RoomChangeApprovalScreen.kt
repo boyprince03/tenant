@@ -26,7 +26,7 @@ import java.util.*
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RoomChangeApprovalScreen(
-    landlordId: Int,
+    landlordId: String,
     db: AppDatabase,
     navController: NavHostController
 ) {

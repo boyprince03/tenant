@@ -13,13 +13,13 @@ import java.util.*
 
 // --- ViewModel Factory ---
 class ElectricityQueryViewModelFactory(
-    private val userId: Int,
+    private val userId: String, // 【***修正***】
     private val db: AppDatabase
 ) : ViewModelProvider.Factory {
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         if (modelClass.isAssignableFrom(ElectricityQueryViewModel::class.java)) {
             @Suppress("UNCHECKED_CAST")
-            return ElectricityQueryViewModel(userId, db) as T
+            return ElectricityQueryViewModel(userId, db) as T // 【***修正***】
         }
         throw IllegalArgumentException("Unknown ViewModel class")
     }
@@ -27,7 +27,7 @@ class ElectricityQueryViewModelFactory(
 
 // --- ViewModel ---
 class ElectricityQueryViewModel(
-    private val userId: Int,
+    private val userId: String, // 【***修正***】
     private val db: AppDatabase
 ) : ViewModel() {
 

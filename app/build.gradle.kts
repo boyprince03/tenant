@@ -95,10 +95,12 @@ dependencies {
 
     // 如果您需要非同步操作 (通常都需要)，請確保有這個
     implementation ("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.7.1")
+    // 【*** 新增此行：Google 登入服務 ***】
+    implementation ("com.google.android.gms:play-services-auth:20.7.0") // 建議使用最新版本
+}
 
 
 //    implementation ("com.google.api-client:google-api-client-android:1.33.0")
 //    implementation ("com.google.api-client:google-api-client-gson:1.33.0")
 //    implementation ("com.google.apis:google-api-services-drive:v3-rev20230710-2.0.0")
 //    implementation ("com.google.android.gms:play-services-auth:21.1.0")
-}

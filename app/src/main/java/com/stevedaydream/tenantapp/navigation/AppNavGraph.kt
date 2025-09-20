@@ -1,88 +1,97 @@
+// tenantapp/navigation/AppNavGraph.kt
 package com.stevedaydream.tenantapp.navigation
 
-// ... (imports保持不變)
 import SelectRoomScreen
-import androidx.compose.runtime.Composable
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
-import com.stevedaydream.tenantapp.data.AppDatabase
-import com.stevedaydream.tenantapp.ui.TenantHomeScreen
-import com.stevedaydream.tenantapp.ui.RepairScreen
-import com.stevedaydream.tenantapp.ui.RepairHistoryScreen
-import com.stevedaydream.tenantapp.ui.ContractPreviewScreen
-import com.stevedaydream.tenantapp.ui.RoomManageScreen
-import com.stevedaydream.tenantapp.ui.ElectricityCalcScreen
-import com.stevedaydream.tenantapp.ui.AnnouncementScreen
-import com.stevedaydream.tenantapp.ui.ElectricityQueryScreen
-import com.stevedaydream.tenantapp.ui.ExcelImportScreen
-import com.stevedaydream.tenantapp.ui.LandlordHomeScreen
-import com.stevedaydream.tenantapp.ui.LoginScreen
-import com.stevedaydream.tenantapp.ui.RegisterScreen
-import androidx.compose.runtime.*
-import androidx.navigation.NavGraph.Companion.findStartDestination
-import androidx.navigation.NavType
 import androidx.navigation.navArgument
+import com.google.firebase.auth.FirebaseAuth
+import com.stevedaydream.tenantapp.data.AppDatabase
+import com.stevedaydream.tenantapp.data.AuthRepository
 import com.stevedaydream.tenantapp.data.User
-import com.stevedaydream.tenantapp.ui.RoomChangeApprovalScreen
-import com.stevedaydream.tenantapp.ui.RoomChangeRequestScreen
-import com.stevedaydream.tenantapp.ui.TenantPaymentScreen
-
-import com.stevedaydream.tenantapp.ui.VisitorHomeScreen
+import com.stevedaydream.tenantapp.ui.* // 匯入所有 UI
 import kotlinx.coroutines.launch
 
 @Composable
 fun AppNavGraph(navController: NavHostController, db: AppDatabase) {
-    NavHost(navController, startDestination = "visitor_home") {
-        // ... (login, register, homescreens etc. 保持不變)
+    val authRepository = remember { AuthRepository(db.userDao()) }
+
+    // --- 【核心修改：動態決定起始頁面】 ---
+    // 檢查 Firebase 當前的認證狀態
+    val startDestination = remember {
+        val currentUser = FirebaseAuth.getInstance().currentUser
+        if (currentUser != null) {
+            // 如果使用者已登入，先導向一個載入頁面，由該頁面決定去主畫面還是登入頁
+            "loading_user"
+        } else {
+            // 如果未登入，則前往訪客首頁
+            "visitor_home"
+        }
+    }
+
+    NavHost(navController, startDestination = startDestination) {
+
+        // --- 【核心修改：新增載入頁面路由】 ---
+        composable("loading_user") {
+            // 在這個頁面，我們從本地資料庫讀取完整的使用者資訊
+            LaunchedEffect(Unit) {
+                val firebaseUser = FirebaseAuth.getInstance().currentUser
+                if (firebaseUser != null) {
+                    // 使用 Firebase UID 從 Room 資料庫中尋找對應的使用者
+                    val userFromDb = db.userDao().getUserById(firebaseUser.uid)
+                    if (userFromDb != null) {
+                        // 如果在本地資料庫找到使用者，則根據其角色導航到對應的主畫面
+                        val destination = if (userFromDb.role == "tenant") "tenant_home/${userFromDb.id}" else "landlord_home/${userFromDb.id}"
+                        navController.navigate(destination) {
+                            // 清除導航堆疊，避免使用者按返回鍵回到載入頁
+                            popUpTo(navController.graph.findStartDestination().id) { inclusive = true }
+                        }
+                    } else {
+                        // 如果 Firebase 顯示已登入，但本地資料庫找不到該使用者
+                        // (可能發生在 App 被清除資料後)，則強制登出並導回訪客首頁
+                        authRepository.logout()
+                        navController.navigate("visitor_home") { popUpTo(0) }
+                    }
+                }
+            }
+            // 顯示一個全螢幕的載入指示器，提升使用者體驗
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center
+            ) {
+                CircularProgressIndicator()
+            }
+        }
+
         composable("login") {
             LoginScreen(
                 onLoginSuccess = { user ->
-                    if (user.role == "tenant")
-                        navController.navigate("tenant_home/${user.id}")
-                    else
-                        navController.navigate("landlord_home/${user.id}")
+                    val destination = if (user.role == "tenant") "tenant_home/${user.id}" else "landlord_home/${user.id}"
+                    navController.navigate(destination) {
+                        popUpTo(navController.graph.findStartDestination().id) {
+                            inclusive = true
+                        }
+                    }
                 },
                 onNavigateRegister = { navController.navigate("register") },
-                userDao = db.userDao(),
+                authRepository = authRepository,
                 navController = navController
             )
         }
-
         composable("register") {
             RegisterScreen(
                 onRegisterSuccess = { navController.popBackStack() },
-                userDao = db.userDao(),
+                authRepository = authRepository,
                 navController = navController
-            )
-        }
-        composable(
-            "tenant_home/{userId}",
-            arguments = listOf(navArgument("userId") { type = NavType.IntType })
-        ) { backStackEntry ->
-            val userId = backStackEntry.arguments?.getInt("userId") ?: 0
-            TenantHomeScreen(
-                userId = userId,
-                onNavigate = { navController.navigate(it) },
-                onLogout = {
-                    navController.navigate("login") {
-                        popUpTo(0)
-                    }
-                }
-            )
-        }
-
-        composable("landlord_home/{userId}") { backStackEntry ->
-            val userId = backStackEntry.arguments?.getString("userId")?.toIntOrNull() ?: 0
-            LandlordHomeScreenWrapper(
-                userId = userId,
-                db = db,
-                onNavigate = { navController.navigate(it) },
-                onLogout = {
-                    navController.navigate("login") {
-                        popUpTo(0)
-                    }
-                }
             )
         }
         composable("visitor_home") {
@@ -94,54 +103,133 @@ fun AppNavGraph(navController: NavHostController, db: AppDatabase) {
             )
         }
 
-        // --- 【核心修改：修改此路由】 ---
+
+        // --- 租客相關頁面 ---
+        composable(
+            "tenant_home/{userId}",
+            arguments = listOf(navArgument("userId") { type = NavType.StringType })
+        ) { backStackEntry ->
+            val userId = backStackEntry.arguments?.getString("userId") ?: ""
+            TenantHomeScreen(
+                userId = userId,
+                onNavigate = { navController.navigate(it) },
+                onLogout = {
+                    authRepository.logout()
+                    navController.navigate("visitor_home") { popUpTo(0) }
+                }
+            )
+        }
+
         composable(
             "home/{userId}",
-            arguments = listOf(navArgument("userId") { type = NavType.IntType })
+            arguments = listOf(navArgument("userId") { type = NavType.StringType })
         ) { backStackEntry ->
-            val userId = backStackEntry.arguments?.getInt("userId") ?: 0
+            val userId = backStackEntry.arguments?.getString("userId") ?: ""
             RepairScreen(
                 navController = navController,
                 dao = db.repairReportDao(),
-                db = db, // 傳入 db 以便查詢使用者資料
+                db = db,
                 userId = userId
             )
         }
 
-        // --- 【核心修改：修改此路由以傳遞 userId】 ---
         composable(
-            "history/{userId}",
-            arguments = listOf(navArgument("userId") { type = NavType.IntType })
+            "tenant_payment/{userId}",
+            arguments = listOf(navArgument("userId") { type = NavType.StringType })
         ) { backStackEntry ->
-            val userId = backStackEntry.arguments?.getInt("userId") ?: 0
-            var user by remember { mutableStateOf<User?>(null) }
-
-            // 取得使用者資料來判斷角色
-            LaunchedEffect(userId) {
-                user = db.userDao().getUserById(userId)
-            }
-
-            user?.let {
-                RepairHistoryScreen(
-                    navController = navController,
-                    dao = db.repairReportDao(),
-                    isLandlord = it.role == "landlord" // 傳入角色判斷結果
-                )
-            }
+            val userId = backStackEntry.arguments?.getString("userId") ?: ""
+            TenantPaymentScreen(userId = userId, db = db, navController = navController)
         }
 
+        composable(
+            "select_room/{userId}",
+            arguments = listOf(navArgument("userId") { type = NavType.StringType })
+        ) { backStackEntry ->
+            val userId = backStackEntry.arguments?.getString("userId") ?: ""
+            SelectRoomScreen(userId = userId, db = db, onNavigateBack = { navController.popBackStack() })
+        }
+
+        composable(
+            "request_room_change/{userId}",
+            arguments = listOf(navArgument("userId") { type = NavType.StringType })
+        ) { backStackEntry ->
+            val userId = backStackEntry.arguments?.getString("userId") ?: ""
+            RoomChangeRequestScreen(userId = userId, db = db, navController = navController)
+        }
+
+
+        // --- 房東相關頁面 ---
+        composable(
+            "landlord_home/{userId}",
+            arguments = listOf(navArgument("userId") { type = NavType.StringType })
+        ) { backStackEntry ->
+            val userId = backStackEntry.arguments?.getString("userId") ?: ""
+            LandlordHomeScreenWrapper(
+                userId = userId,
+                db = db,
+                onNavigate = { navController.navigate(it) },
+                onLogout = {
+                    authRepository.logout()
+                    navController.navigate("visitor_home") { popUpTo(0) }
+                }
+            )
+        }
         composable("contract") {
-            ContractPreviewScreen(navController)
+            ContractPreviewScreen(navController = navController)
         }
         composable(
             "room_manage/{userId}",
-            arguments = listOf(navArgument("userId") { type = NavType.IntType })
+            arguments = listOf(navArgument("userId") { type = NavType.StringType })
         ) { backStackEntry ->
-            val userId = backStackEntry.arguments?.getInt("userId") ?: 0
-            RoomManageScreen(
-                userId = userId,
-                db = db,
+            val userId = backStackEntry.arguments?.getString("userId") ?: ""
+            RoomManageScreen(userId = userId, db = db, navController = navController)
+        }
+        composable(
+            "room_change_approval/{landlordId}",
+            arguments = listOf(navArgument("landlordId") { type = NavType.StringType })
+        ) { backStackEntry ->
+            val landlordId = backStackEntry.arguments?.getString("landlordId") ?: ""
+            RoomChangeApprovalScreen(landlordId = landlordId, db = db, navController = navController)
+        }
+        composable("excel_import") {
+            ExcelImportScreen(
+                roomDao = db.roomDao(),
+                meterDao = db.electricMeterDao(),
                 navController = navController
+            )
+        }
+
+        // --- 共用頁面 ---
+        composable(
+            "announcement/{userId}",
+            arguments = listOf(navArgument("userId") { type = NavType.StringType })
+        ) { backStackEntry ->
+            val userId = backStackEntry.arguments?.getString("userId") ?: ""
+            var user by remember { mutableStateOf<User?>(null) }
+            LaunchedEffect(userId) {
+                user = db.userDao().getUserById(userId)
+            }
+            AnnouncementScreen(
+                dao = db.announcementDao(),
+                onNavigateBack = { navController.popBackStack() },
+                currentUser = user,
+                landlordCode = if (user?.role == "landlord") user?.landlordCode else null
+            )
+        }
+        composable(
+            "history/{userId}",
+            arguments = listOf(navArgument("userId") { type = NavType.StringType })
+        ) { backStackEntry ->
+            val userId = backStackEntry.arguments?.getString("userId") ?: ""
+            var user by remember { mutableStateOf<User?>(null) }
+            LaunchedEffect(userId) {
+                user = db.userDao().getUserById(userId)
+            }
+            val isLandlord = user?.role == "landlord"
+            RepairHistoryScreen(
+                navController = navController,
+                dao = db.repairReportDao(),
+                isLandlord = isLandlord
             )
         }
 
@@ -158,89 +246,24 @@ fun AppNavGraph(navController: NavHostController, db: AppDatabase) {
                 userRole = userRole
             )
         }
-        composable(
-            "announcement/{userId}",
-            arguments = listOf(navArgument("userId") { type = NavType.IntType; defaultValue = 0 })
-        ) { backStackEntry ->
-            val userId = backStackEntry.arguments?.getInt("userId") ?: 0
-            var user by remember { mutableStateOf<User?>(null) }
-            LaunchedEffect(userId) {
-                if (userId != 0) {
-                    user = db.userDao().getUserById(userId)
-                }
-            }
-            AnnouncementScreen(
-                dao = db.announcementDao(),
-                onNavigateBack = { navController.popBackStack() },
-                currentUser = user,
-                landlordCode = if (user?.role == "landlord") user?.landlordCode else null
-            )
-        }
 
         composable(
             "electricity_query/{userId}",
-            arguments = listOf(navArgument("userId") { type = NavType.IntType })
+            arguments = listOf(navArgument("userId") { type = NavType.StringType })
         ) { backStackEntry ->
-            val userId = backStackEntry.arguments?.getInt("userId") ?: 0
-            ElectricityQueryScreen(userId, db, navController)
-        }
-
-        composable("excel_import") {
-            ExcelImportScreen(db.roomDao(), db.electricMeterDao(), navController)
-        }
-        composable(
-            "select_room/{userId}",
-            arguments = listOf(navArgument("userId") { type = NavType.IntType })
-        ) { backStackEntry ->
-            val userId = backStackEntry.arguments?.getInt("userId") ?: 0
-            SelectRoomScreen(
-                userId = userId,
-                db = db,
-                onNavigateBack = { navController.popBackStack() }
-            )
-        }
-        composable(
-            "tenant_payment/{userId}",
-            arguments = listOf(navArgument("userId") { type = NavType.IntType })
-        ) { backStackEntry ->
-            val userId = backStackEntry.arguments?.getInt("userId") ?: 0
-            TenantPaymentScreen(
-                userId = userId,
-                db = db,
-                navController = navController
-            )
-        }
-        // 【新增】房客申請更換房間頁面
-        composable(
-            "request_room_change/{userId}",
-            arguments = listOf(navArgument("userId") { type = NavType.IntType })
-        ) { backStackEntry ->
-            val userId = backStackEntry.arguments?.getInt("userId") ?: 0
-            RoomChangeRequestScreen(
-                userId = userId,
-                db = db,
-                navController = navController
-            )
-        }
-
-        // 【新增】房東審核頁面
-        composable(
-            "room_change_approval/{landlordId}",
-            arguments = listOf(navArgument("landlordId") { type = NavType.IntType })
-        ) { backStackEntry ->
-            val landlordId = backStackEntry.arguments?.getInt("landlordId") ?: 0
-            RoomChangeApprovalScreen(
-                landlordId = landlordId,
-                db = db,
-                navController = navController
-            )
+            val userId = backStackEntry.arguments?.getString("userId") ?: ""
+            ElectricityQueryScreen(userId = userId, db = db, navController = navController)
         }
     }
 }
 
+
+/**
+ * 輔助用的 Wrapper (保持不變)
+ */
 @Composable
 fun LandlordHomeScreenWrapper(
-    userId: Int,
+    userId: String,
     db: AppDatabase,
     onNavigate: (String) -> Unit,
     onLogout: () -> Unit
@@ -254,17 +277,17 @@ fun LandlordHomeScreenWrapper(
         }
     }
 
-    user?.let {
+    user?.let { landlord ->
         LandlordHomeScreen(
-            landlord = it,
+            landlord = landlord,
             onNavigate = { route ->
                 when (route) {
-                    "announcement" -> onNavigate("announcement/${it.id}")
-                    "room_manage" -> onNavigate("room_manage/${it.id}")
-                    "electricity_query" -> onNavigate("electricity_query/${it.id}")
-                    // --- 【核心修改：更新導航路徑】 ---
-                    "history" -> onNavigate("history/${it.id}")
-                    "room_change_approval" -> onNavigate("room_change_approval/${it.id}") // 新增
+                    "announcement" -> onNavigate("announcement/${landlord.id}")
+                    "room_manage" -> onNavigate("room_manage/${landlord.id}")
+                    "electricity_query" -> onNavigate("electricity_query/${landlord.id}")
+                    "history" -> onNavigate("history/${landlord.id}")
+                    "room_change_approval" -> onNavigate("room_change_approval/${landlord.id}")
+                    "electricity/landlord" -> onNavigate("electricity/landlord")
                     else -> onNavigate(route)
                 }
             },

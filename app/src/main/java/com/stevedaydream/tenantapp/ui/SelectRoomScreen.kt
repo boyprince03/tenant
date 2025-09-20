@@ -21,7 +21,7 @@ import kotlinx.coroutines.withContext
 
 @Composable
 fun SelectRoomScreen(
-    userId: Int,
+    userId: String,
     db: AppDatabase,
     onNavigateBack: () -> Unit
 ) {

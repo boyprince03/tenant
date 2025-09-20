@@ -15,7 +15,7 @@ import java.util.*
 
 // ViewModel Factory (保持不變)
 class TenantPaymentViewModelFactory(
-    private val userId: Int,
+    private val userId: String,
     private val userDao: UserDao,
     private val roomDao: RoomDao,
     private val electricMeterDao: ElectricMeterDao,
@@ -24,7 +24,7 @@ class TenantPaymentViewModelFactory(
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         if (modelClass.isAssignableFrom(TenantPaymentViewModel::class.java)) {
             @Suppress("UNCHECKED_CAST")
-            return TenantPaymentViewModel(userId, userDao, roomDao, electricMeterDao, paymentDao) as T
+            return TenantPaymentViewModel(userId, userDao, roomDao, electricMeterDao, paymentDao) as T // 【***修正***】
         }
         throw IllegalArgumentException("Unknown ViewModel class")
     }
@@ -32,7 +32,7 @@ class TenantPaymentViewModelFactory(
 
 // ViewModel
 class TenantPaymentViewModel(
-    private val userId: Int,
+    private val userId: String,
     private val userDao: UserDao,
     private val roomDao: RoomDao,
     private val electricMeterDao: ElectricMeterDao,

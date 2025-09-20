@@ -28,7 +28,7 @@ fun RepairScreen(
     navController: NavHostController,
     dao: RepairReportDao,
     db: AppDatabase, // 傳入 db
-    userId: Int      // 傳入 userId
+    userId: String      // 傳入 userId
 ) {
     // --- 【核心修改：自動帶入使用者資料】 ---
     var currentUser by remember { mutableStateOf<User?>(null) }
@@ -36,7 +36,7 @@ fun RepairScreen(
     var roomNumber by remember { mutableStateOf("") }
 
     LaunchedEffect(userId) {
-        if (userId != 0) {
+        if (userId.isNotBlank()) { // 【***修正***】
             currentUser = db.userDao().getUserById(userId)
             currentUser?.let {
                 tenantName = it.username

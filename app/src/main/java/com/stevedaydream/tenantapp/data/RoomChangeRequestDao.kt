@@ -1,3 +1,5 @@
+// tenantapp/data/RoomChangeRequestDao.kt
+
 package com.stevedaydream.tenantapp.data
 
 import androidx.room.Dao
@@ -19,7 +21,7 @@ interface RoomChangeRequestDao {
 
     @Query("SELECT * FROM room_change_requests WHERE id = :requestId")
     suspend fun getRequestById(requestId: Int): RoomChangeRequest?
-    // --- 【*** 新增此方法 ***】 ---
+
     @Query("SELECT * FROM room_change_requests WHERE tenantId = :tenantId ORDER BY requestDate DESC LIMIT 1")
-    fun getLatestRequestByTenantId(tenantId: Int): Flow<RoomChangeRequest?>
+    fun getLatestRequestByTenantId(tenantId: String): Flow<RoomChangeRequest?> // 【*** 修正：Int -> String ***】
 }

@@ -18,7 +18,7 @@ import com.stevedaydream.tenantapp.data.AppDatabase
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun ElectricityQueryScreen(
-    userId: Int,
+    userId: String, // 【***修正***】
     db: AppDatabase,
     navController: NavHostController
 ) {

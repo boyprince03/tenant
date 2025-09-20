@@ -14,7 +14,7 @@ import androidx.room.RoomDatabase
         Payment::class,
         RoomChangeRequest::class // <-- 新增 Entity
     ],
-    version = 17, // <-- 版本升級
+    version = 18, // <-- 版本升級
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
