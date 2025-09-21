@@ -12,32 +12,38 @@ import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
 import java.util.UUID
 
-/**
- * 用於執行管理員等級操作的 Repository。
- */
 class AdminRepository(
     private val userDao: UserDao,
     private val roomDao: RoomDao,
     private val repairReportDao: RepairReportDao,
     private val announcementDao: AnnouncementDao,
-    private val paymentDao: PaymentDao, // Added
-    private val electricMeterDao: ElectricMeterDao, // Added
-    private val roomChangeRequestDao: RoomChangeRequestDao, // Added
+    private val paymentDao: PaymentDao,
+    private val electricMeterDao: ElectricMeterDao,
+    private val roomChangeRequestDao: RoomChangeRequestDao,
+    private val roomRepository: RoomRepository, // Added
     private val db: AppDatabase,
     private val coroutineScope: CoroutineScope
 ) {
 
     private val firestore = FirebaseFirestore.getInstance()
 
-    /**
-     * 【*** 新增此方法 ***】
-     * 從 Firestore 拉取所有集合的資料，並完全覆寫本地 Room 資料庫。
-     * @return Pair<Boolean, String> - first is success, second is message
-     */
+    // --- 【*** 新增房間 CRUD 方法 ***】 ---
+    suspend fun addRoom(room: RoomEntity) {
+        roomRepository.addRoom(room)
+    }
+
+    suspend fun updateRoom(room: RoomEntity) {
+        roomRepository.updateRoom(room)
+    }
+
+    suspend fun deleteRoom(room: RoomEntity) {
+        roomRepository.deleteRoom(room)
+    }
+
+
     suspend fun syncAllDataFromCloud(): Pair<Boolean, String> {
         return try {
             withContext(Dispatchers.IO) {
-                // 1. 從 Firestore 獲取所有資料
                 val users = firestore.collection("users").get().await().toObjects<User>()
                 val rooms = firestore.collection("rooms").get().await().toObjects<RoomEntity>()
                 val reports = firestore.collection("repair_reports").get().await().toObjects<RepairReport>()
@@ -46,10 +52,8 @@ class AdminRepository(
                 val records = firestore.collection("electric_meter_records").get().await().toObjects<ElectricMeterRecord>()
                 val requests = firestore.collection("room_change_requests").get().await().toObjects<RoomChangeRequest>()
 
-                // 2. 清除本地所有資料表
                 db.clearAllTables()
 
-                // 3. 將從雲端獲取的資料寫入本地資料庫
                 userDao.insertOrUpdateAll(users)
                 roomDao.insertRooms(rooms)
                 repairReportDao.insertOrUpdateAll(reports)
@@ -137,7 +141,9 @@ class AdminRepository(
 
     suspend fun getAllRooms(limit: Int = 0): List<RoomEntity> {
         return try {
-            var query = firestore.collection("rooms").orderBy("roomNumber")
+            // 【*** 核心修正：加上 orderBy() 或明確指定類型為 Query ***】
+            // 加上 orderBy() 可以確保變數被推斷為 Query 類型，並保證資料順序
+            var query: Query = firestore.collection("rooms").orderBy("roomNumber")
             if (limit > 0) {
                 query = query.limit(limit.toLong())
             }

@@ -1,11 +1,13 @@
 package com.stevedaydream.tenantapp.ui
 
+import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
@@ -13,6 +15,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -20,6 +23,7 @@ import androidx.navigation.NavHostController
 import com.stevedaydream.tenantapp.data.AdminRepository
 import com.stevedaydream.tenantapp.data.RoomEntity
 import com.stevedaydream.tenantapp.data.User
+import com.stevedaydream.tenantapp.ui.shared.RoomEditDialog
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -29,6 +33,26 @@ fun AdminRoomListScreen(
 ) {
     val viewModel: AdminRoomListViewModel = viewModel(factory = AdminRoomListViewModelFactory(adminRepository))
     val uiState by viewModel.uiState.collectAsState()
+    val context = LocalContext.current
+
+    // 監聽錯誤訊息並顯示 Toast
+    LaunchedEffect(uiState.error) {
+        uiState.error?.let {
+            Toast.makeText(context, it, Toast.LENGTH_LONG).show()
+        }
+    }
+
+    // 顯示編輯/新增對話框
+    if (uiState.showEditDialog && uiState.editingRoom != null) {
+        RoomEditDialog(
+            room = uiState.editingRoom!!,
+            isNew = uiState.isCreatingNew,
+            allLandlords = uiState.allLandlords,
+            onDismiss = { viewModel.onDismissDialog() },
+            onSave = { room -> viewModel.onSaveRoom(room) },
+            onDelete = { room -> viewModel.onDeleteRoom(room) }
+        )
+    }
 
     Scaffold(
         topBar = {
@@ -40,6 +64,11 @@ fun AdminRoomListScreen(
                     }
                 }
             )
+        },
+        floatingActionButton = {
+            FloatingActionButton(onClick = { viewModel.onAddNewRoomClicked() }) {
+                Icon(Icons.Default.Add, contentDescription = "新增房間")
+            }
         }
     ) { innerPadding ->
         when {
@@ -48,7 +77,7 @@ fun AdminRoomListScreen(
                     CircularProgressIndicator()
                 }
             }
-            uiState.error != null -> {
+            uiState.error != null && uiState.roomGroups.isEmpty() -> {
                 Box(Modifier.fillMaxSize().padding(innerPadding), contentAlignment = Alignment.Center) {
                     Text(uiState.error!!, color = MaterialTheme.colorScheme.error)
                 }
@@ -64,18 +93,17 @@ fun AdminRoomListScreen(
                     contentPadding = PaddingValues(16.dp),
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    // 將未指派的房間顯示在最上面
                     uiState.roomGroups[null]?.let { unassignedRooms ->
                         item {
                             LandlordRoomGroup(
                                 landlordName = "未指派房東",
                                 landlordInfo = "(${unassignedRooms.size} 間)",
-                                rooms = unassignedRooms
+                                rooms = unassignedRooms,
+                                onRoomClick = { room -> viewModel.onEditRoomClicked(room) }
                             )
                         }
                     }
 
-                    // 排序其他房東
                     val sortedLandlords = uiState.roomGroups.keys.filterNotNull().sortedBy { it.username }
                     sortedLandlords.forEach { landlord ->
                         uiState.roomGroups[landlord]?.let { rooms ->
@@ -83,7 +111,8 @@ fun AdminRoomListScreen(
                                 LandlordRoomGroup(
                                     landlordName = landlord.username,
                                     landlordInfo = "(${landlord.landlordCode})",
-                                    rooms = rooms
+                                    rooms = rooms,
+                                    onRoomClick = { room -> viewModel.onEditRoomClicked(room) }
                                 )
                             }
                         }
@@ -98,7 +127,8 @@ fun AdminRoomListScreen(
 private fun LandlordRoomGroup(
     landlordName: String,
     landlordInfo: String,
-    rooms: List<RoomEntity>
+    rooms: List<RoomEntity>,
+    onRoomClick: (RoomEntity) -> Unit
 ) {
     var expanded by remember { mutableStateOf(true) }
 
@@ -124,7 +154,7 @@ private fun LandlordRoomGroup(
             AnimatedVisibility(visible = expanded) {
                 Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
                     rooms.sortedBy { it.roomNumber }.forEach { room ->
-                        RoomInfoRow(room)
+                        RoomInfoRow(room, onClick = { onRoomClick(room) })
                         Divider()
                     }
                 }
@@ -134,10 +164,11 @@ private fun LandlordRoomGroup(
 }
 
 @Composable
-private fun RoomInfoRow(room: RoomEntity) {
+private fun RoomInfoRow(room: RoomEntity, onClick: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .clickable(onClick = onClick)
             .padding(vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {

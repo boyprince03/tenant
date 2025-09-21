@@ -14,8 +14,12 @@ import kotlinx.coroutines.launch
 
 data class AdminRoomListUiState(
     val roomGroups: Map<User?, List<RoomEntity>> = emptyMap(),
+    val allLandlords: List<User> = emptyList(), // Store all landlords for the dropdown
     val isLoading: Boolean = true,
-    val error: String? = null
+    val error: String? = null,
+    val showEditDialog: Boolean = false,
+    val editingRoom: RoomEntity? = null,
+    val isCreatingNew: Boolean = false
 )
 
 class AdminRoomListViewModel(private val adminRepository: AdminRepository) : ViewModel() {
@@ -27,41 +31,100 @@ class AdminRoomListViewModel(private val adminRepository: AdminRepository) : Vie
         loadAllRoomsGroupedByLandlord()
     }
 
-    private fun loadAllRoomsGroupedByLandlord() {
+    fun loadAllRoomsGroupedByLandlord() {
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true) }
             try {
                 val allRooms = adminRepository.getAllRooms()
                 val allLandlords = adminRepository.getAllLandlords()
 
-                // 使用 landlordCode 作為 key 來建立一個 map
                 val landlordMap = allLandlords.associateBy { it.landlordCode }
-
-                // 根據 landlordCode 將房間分組
                 val groupedByLandlordCode = allRooms.groupBy { it.landlordCode }
 
-                // 建立最終的 Map<User?, List<RoomEntity>>
                 val finalGroups = mutableMapOf<User?, List<RoomEntity>>()
                 groupedByLandlordCode.forEach { (landlordCode, rooms) ->
                     if (landlordCode == null) {
-                        // key 為 null 代表未指派的房間
                         finalGroups[null] = rooms
                     } else {
                         val landlord = landlordMap[landlordCode]
                         if (landlord != null) {
                             finalGroups[landlord] = rooms
                         } else {
-                            // 如果有房間的 landlordCode 在房東列表找不到，也歸類到未指派
                             val unassigned = finalGroups.getOrPut(null) { emptyList() }
                             finalGroups[null] = unassigned + rooms
                         }
                     }
                 }
 
-                _uiState.update { it.copy(isLoading = false, roomGroups = finalGroups) }
+                _uiState.update {
+                    it.copy(
+                        isLoading = false,
+                        roomGroups = finalGroups,
+                        allLandlords = allLandlords
+                    )
+                }
 
             } catch (e: Exception) {
                 _uiState.update { it.copy(isLoading = false, error = "讀取房間資料失敗: ${e.message}") }
+            }
+        }
+    }
+
+    // --- CRUD Event Handlers ---
+
+    fun onAddNewRoomClicked() {
+        _uiState.update {
+            it.copy(
+                editingRoom = RoomEntity(),
+                isCreatingNew = true,
+                showEditDialog = true
+            )
+        }
+    }
+
+    fun onEditRoomClicked(room: RoomEntity) {
+        _uiState.update {
+            it.copy(
+                editingRoom = room,
+                isCreatingNew = false,
+                showEditDialog = true
+            )
+        }
+    }
+
+    fun onDismissDialog() {
+        _uiState.update {
+            it.copy(
+                editingRoom = null,
+                showEditDialog = false
+            )
+        }
+    }
+
+    fun onSaveRoom(room: RoomEntity) {
+        viewModelScope.launch {
+            try {
+                if (_uiState.value.isCreatingNew) {
+                    adminRepository.addRoom(room)
+                } else {
+                    adminRepository.updateRoom(room)
+                }
+                onDismissDialog()
+                loadAllRoomsGroupedByLandlord() // Refresh list
+            } catch (e: Exception) {
+                _uiState.update { it.copy(error = "儲存失敗: ${e.message}") }
+            }
+        }
+    }
+
+    fun onDeleteRoom(room: RoomEntity) {
+        viewModelScope.launch {
+            try {
+                adminRepository.deleteRoom(room)
+                onDismissDialog()
+                loadAllRoomsGroupedByLandlord() // Refresh list
+            } catch (e: Exception) {
+                _uiState.update { it.copy(error = "刪除失敗: ${e.message}") }
             }
         }
     }

@@ -30,10 +30,8 @@ import kotlinx.coroutines.launch
 fun AppNavGraph(navController: NavHostController, db: AppDatabase) {
     val scope = rememberCoroutineScope()
 
-    val authRepository = remember { AuthRepository(db.userDao()) }
+    // 【*** 核心修改 1：調整 Repository 初始化順序 ***】
     val roomRepository = remember { RoomRepository(db.roomDao(), scope) }
-    val userRepository = remember { UserRepository(db.userDao(), scope) }
-    val requestRepository = remember { RoomChangeRequestRepository(db.roomChangeRequestDao()) }
     val adminRepository = remember {
         AdminRepository(
             userDao = db.userDao(),
@@ -43,10 +41,16 @@ fun AppNavGraph(navController: NavHostController, db: AppDatabase) {
             paymentDao = db.paymentDao(),
             electricMeterDao = db.electricMeterDao(),
             roomChangeRequestDao = db.roomChangeRequestDao(),
+            roomRepository = roomRepository, // Pass RoomRepository
             db = db,
             coroutineScope = scope
         )
     }
+    // 【*** 核心修改 2：將 adminRepository 注入 AuthRepository ***】
+    val authRepository = remember { AuthRepository(db.userDao(), adminRepository) }
+
+    val userRepository = remember { UserRepository(db.userDao(), scope) }
+    val requestRepository = remember { RoomChangeRequestRepository(db.roomChangeRequestDao()) }
     val repairReportRepository = remember { RepairReportRepository(db.repairReportDao(), scope) }
     val announcementRepository = remember { AnnouncementRepository(db.announcementDao(), scope) }
     val electricMeterRepository = remember { ElectricMeterRepository(db.electricMeterDao(), scope) }
@@ -297,7 +301,6 @@ fun AppNavGraph(navController: NavHostController, db: AppDatabase) {
             if(isLoadingUser) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
             } else {
-                // *** 使用重新命名的 Composable ***
                 LandlordRoomManageScreen(roomRepository = roomRepository, currentUser = currentUser, navController = navController)
             }
         }
@@ -377,7 +380,6 @@ fun AppNavGraph(navController: NavHostController, db: AppDatabase) {
                 Box(Modifier.fillMaxSize().padding(it), contentAlignment = Alignment.Center) { Text("換房請求列表頁面") }
             }
         }
-        // *** 將路由指向新的 Composable ***
         composable("room_list_admin") {
             AdminRoomListScreen(navController = navController, adminRepository = adminRepository)
         }
