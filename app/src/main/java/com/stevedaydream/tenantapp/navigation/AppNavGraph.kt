@@ -206,7 +206,8 @@ fun AppNavGraph(navController: NavHostController, db: AppDatabase) {
             arguments = listOf(navArgument("userId") { type = NavType.StringType })
         ) { backStackEntry ->
             val userId = backStackEntry.arguments?.getString("userId") ?: ""
-            val factory = TenantViewModelFactory(userId, db, requestRepository)
+            // 【*** 核心修改：將 userRepository 和 roomRepository 傳遞給工廠 ***】
+            val factory = TenantViewModelFactory(userId, db, requestRepository, userRepository, roomRepository)
             TenantHomeScreen(
                 navController = navController,
                 viewModelFactory = factory,
@@ -263,7 +264,8 @@ fun AppNavGraph(navController: NavHostController, db: AppDatabase) {
                 userId = userId,
                 db = db,
                 navController = navController,
-                requestRepository = requestRepository
+                requestRepository = requestRepository,
+                adminRepository = adminRepository // <-- 【*** 修改點 ***】
             )
         }
 

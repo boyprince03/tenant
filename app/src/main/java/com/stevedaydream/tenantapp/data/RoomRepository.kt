@@ -69,6 +69,31 @@ class RoomRepository(private val roomDao: RoomDao, private val coroutineScope: C
     }
 
     /**
+     * 【*** 新增此函式 ***】
+     * [一次性讀取]
+     * 從 Firestore 根據房號獲取單一房間資料，並更新本地快取。
+     * 這確保了當使用者需要查看特定房間的詳細資訊時，能看到最新的資料。
+     */
+    suspend fun refreshRoomByNumber(roomNumber: String) {
+        try {
+            val snapshot = roomsCollection
+                .whereEqualTo("roomNumber", roomNumber)
+                .limit(1)
+                .get()
+                .await()
+            val room = snapshot.documents.firstOrNull()?.toObject(RoomEntity::class.java)
+            if (room != null) {
+                // 使用 insertRoom 搭配 OnConflictStrategy.REPLACE 來達到更新效果
+                roomDao.insertRoom(room)
+            }
+        } catch (e: Exception) {
+            Log.e("RoomRepository", "Error refreshing room $roomNumber from Firestore", e)
+            // 即使雲端抓取失敗，App 仍可顯示本地的舊資料，不會因此崩潰
+        }
+    }
+
+
+    /**
      * [寫入]
      * 新增一筆房間資料。
      * 1. 先寫入 Firestore。

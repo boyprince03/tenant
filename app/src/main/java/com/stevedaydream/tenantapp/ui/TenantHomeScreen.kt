@@ -77,6 +77,9 @@ fun TenantHomeScreen(
             }
         } else {
             val currentUser = uiState.currentUser
+            // 【*** 核心修改 1：新增判斷是否「完全」綁定的變數 ***】
+            val isFullyBound = currentUser?.boundRoomNumber != null && currentUser.boundLandlordCode != null
+
             Column(
                 modifier = Modifier
                     .fillMaxSize()
@@ -156,16 +159,28 @@ fun TenantHomeScreen(
 
                 ElevatedButton(
                     modifier = Modifier.fillMaxWidth(),
-                    onClick = { showRoomInfoDialog = true },
-                    enabled = currentUser?.boundRoomNumber != null
+                    onClick = {
+                        // 【*** 核心修改 1：先觸發刷新 ***】
+                        viewModel.onRefresh()
+                        // 【*** 核心修改 2：再顯示對話框 ***】
+                        showRoomInfoDialog = true
+                    },
+                    // 【*** 核心修改 3：在刷新時禁用按鈕 ***】
+                    enabled = isFullyBound && !uiState.isRefreshing
                 ) {
-                    Icon(Icons.Default.Info, contentDescription = "租屋資訊", modifier = Modifier.padding(end = 8.dp))
-                    Text("查看我的租屋資訊", style = MaterialTheme.typography.bodyLarge)
+                    // 【*** 核心修改 4：根據刷新狀態顯示不同內容 ***】
+                    if (uiState.isRefreshing) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(24.dp),
+                            color = MaterialTheme.colorScheme.primary // 載入圖示使用主題顏色
+                        )
+                    } else {
+                        Icon(Icons.Default.Info, contentDescription = "租屋資訊", modifier = Modifier.padding(end = 8.dp))
+                        Text("查看我的租屋資訊", style = MaterialTheme.typography.bodyLarge)
+                    }
                 }
 
-                // --- 【*** 以下為新增/修正的按鈕 ***】 ---
-                // 條件：必須綁定房間，且沒有正在審核中的請求
-                if (currentUser?.boundRoomNumber != null && uiState.latestRequest?.status != "pending") {
+                if (isFullyBound && uiState.latestRequest?.status != "pending") {
                     ElevatedButton(
                         modifier = Modifier.fillMaxWidth(),
                         onClick = { currentUser.id.let { navController.navigate("request_room_change/$it") } }
@@ -174,7 +189,6 @@ fun TenantHomeScreen(
                         Text("申請更換房間", style = MaterialTheme.typography.bodyLarge)
                     }
                 }
-                // --- 【*** 新增結束 ***】 ---
                 ElevatedButton(
                     modifier = Modifier.fillMaxWidth(),
                     onClick = { currentUser?.id?.let { navController.navigate("tenant_payment/$it") } }
@@ -185,11 +199,11 @@ fun TenantHomeScreen(
                 ElevatedButton(
                     modifier = Modifier.fillMaxWidth(),
                     onClick = { currentUser?.id?.let { navController.navigate("select_room/$it") } },
-                    enabled = currentUser?.boundRoomNumber == null
+                    enabled = !isFullyBound // <-- 【*** 核心修改 2：使用新的判斷變數 ***】
                 ) {
                     Icon(Icons.Default.HomeWork, contentDescription = "綁定房間", modifier = Modifier.padding(end = 8.dp))
                     Text(
-                        if (currentUser?.boundRoomNumber != null) "已綁定房間" else "綁定房東及房間",
+                        if (isFullyBound) "已綁定房間" else "綁定房東及房間", // <-- 使用新的判斷變數
                         style = MaterialTheme.typography.bodyLarge
                     )
                 }
@@ -237,10 +251,7 @@ fun TenantHomeScreen(
     }
 }
 
-/**
- * 【*** 新增 ***】
- * 顯示房間、房東和租客資訊的對話框 Composable。
- */
+
 @Composable
 private fun RoomInfoDialog(
     room: RoomEntity?,
@@ -275,10 +286,6 @@ private fun RoomInfoDialog(
     )
 }
 
-/**
- * 【*** 新增 ***】
- * 用於在對話框中顯示標籤和值的輔助 Composable。
- */
 @Composable
 private fun InfoRow(label: String, value: String) {
     Row(verticalAlignment = Alignment.CenterVertically) {

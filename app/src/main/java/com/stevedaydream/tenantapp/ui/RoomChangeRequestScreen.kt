@@ -8,6 +8,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -25,7 +26,8 @@ fun RoomChangeRequestScreen(
     userId: String,
     db: AppDatabase,
     navController: NavHostController,
-    requestRepository: RoomChangeRequestRepository
+    requestRepository: RoomChangeRequestRepository,
+    adminRepository: AdminRepository // <-- 【*** 新增 Repository ***】
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -36,6 +38,7 @@ fun RoomChangeRequestScreen(
     var availableRooms by remember { mutableStateOf<List<RoomEntity>>(emptyList()) }
     var selectedRoom by remember { mutableStateOf<RoomEntity?>(null) }
     var isLoading by remember { mutableStateOf(true) }
+    var isSyncing by remember { mutableStateOf(false) } // <-- 【*** 新增同步狀態 ***】
 
     LaunchedEffect(userId) {
         isLoading = true
@@ -75,20 +78,42 @@ fun RoomChangeRequestScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
-            if (isLoading) {
-                CircularProgressIndicator()
+            if (isLoading || isSyncing) { // <-- 【*** 修改載入條件 ***】
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    CircularProgressIndicator()
+                    if (isSyncing) {
+                        Spacer(Modifier.height(8.dp))
+                        Text("同步資料中...")
+                    }
+                }
             } else if (currentUser == null) {
                 Text("無法載入使用者資訊。")
             } else if (currentUser?.boundLandlordCode == null) {
                 Text("您目前未綁定任何房東，無法申請更換房間。")
             } else if (availableRooms.isEmpty()) {
-                Text("目前沒有其他可更換的房間。")
+                // --- 【*** 核心修改：新增同步按鈕 ***】 ---
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("目前沒有其他可更換的房間。")
+                    IconButton(
+                        onClick = {
+                            scope.launch {
+                                isSyncing = true
+                                val (success, message) = adminRepository.syncAllDataFromCloud()
+                                Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+                                isSyncing = false
+                                // 同步後，LaunchedEffect 將自動重新載入資料
+                            }
+                        },
+                        enabled = !isSyncing
+                    ) {
+                        Icon(Icons.Default.Refresh, contentDescription = "重新整理")
+                    }
+                }
             } else {
-                // --- 【*** 核心修正：移除外部的 Column + verticalScroll，改為使用單一的 LazyColumn 來佈局 ***】 ---
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
                     horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(8.dp) // 統一項目間距
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     item {
                         Text("請選擇您想更換的新房間：", style = MaterialTheme.typography.titleMedium)

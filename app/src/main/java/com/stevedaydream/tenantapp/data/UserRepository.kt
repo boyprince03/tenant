@@ -77,6 +77,25 @@ class UserRepository(
         return userDao.getAllLandlords()
     }
 
+
+    /**
+     * 【*** 新增此函式 ***】
+     * 從 Firestore 根據房東序號抓取房東的最新資料並更新本地快取。
+     */
+    suspend fun refreshLandlordByCode(code: String) {
+        try {
+            val snapshot = usersCollection
+                .whereEqualTo("landlordCode", code)
+                .whereEqualTo("role", "landlord")
+                .limit(1)
+                .get()
+                .await()
+            val landlord = snapshot.documents.firstOrNull()?.toObject(User::class.java)
+            landlord?.let { userDao.insert(it) }
+        } catch (e: Exception) {
+            Log.e("UserRepository", "Error refreshing landlord with code $code", e)
+        }
+    }
     private fun listenForAllLandlords() {
         usersCollection.whereEqualTo("role", "landlord")
             .addSnapshotListener { snapshot, error ->

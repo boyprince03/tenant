@@ -43,7 +43,7 @@ fun RoomChangeApprovalScreen(
     var landlord by remember { mutableStateOf<User?>(null) }
 
     val requests by remember(landlord) {
-        landlord?.landlordCode?.let { requestRepository.getRequestsByLandlord(it) } 
+        landlord?.landlordCode?.let { requestRepository.getRequestsByLandlord(it) }
             ?: kotlinx.coroutines.flow.flowOf(emptyList())
     }.collectAsState(initial = emptyList())
 
@@ -67,27 +67,47 @@ fun RoomChangeApprovalScreen(
                     requestRepository.update(updatedRequest)
 
                     if (isApproved) {
-                        // 1. Fetch tenant using UserRepository (suspend call from Flow)
+                        // --- 【*** 核心修改：從這裡開始 ***】 ---
                         val tenant = userRepository.getUser(req.tenantId).firstOrNull()
-                        // 2. Fetch rooms using local DAO (suspend calls)
                         val oldRoom = roomDao.getRoomByNumber(req.currentRoomNumber)
                         val newRoom = roomDao.getRoomByNumber(req.requestedRoomNumber)
 
                         if (tenant != null && oldRoom != null && newRoom != null) {
-                            // 3. Update tenant's boundRoomNumber using UserRepository
-                            val updatedTenant = tenant.copy(boundRoomNumber = req.requestedRoomNumber)
-                            userRepository.saveUser(updatedTenant) // Use saveUser from UserRepository
+                            // 【修正點 1】 landlordCode 的來源應以 request 物件為準，避免因本地資料過舊而出錯
+                            val landlordCode = req.landlordCode
 
-                            // 4. Update old room's status using RoomRepository
-                            roomRepository.updateRoom(oldRoom.copy(tenantId = null, tenantName = "", status = "可租"))
+                            // 1. 完整更新租客資訊
+                            val updatedTenant = tenant.copy(
+                                boundRoomNumber = req.requestedRoomNumber,
+                                boundLandlordCode = landlordCode
+                            )
+                            userRepository.saveUser(updatedTenant)
 
-                            // 5. Update new room's status and bind tenant using RoomRepository
-                            roomRepository.updateRoom(newRoom.copy(tenantId = tenant.id, tenantName = tenant.username, status = "出租中"))
+                            // 2. 更新舊房間為可租
+                            // 【修正點 2】 在 copy 中明確傳入 landlordCode，確保它不會因為 oldRoom 的舊資料而被意外清空
+                            val updatedOldRoom = oldRoom.copy(
+                                tenantId = null,
+                                tenantName = "",
+                                status = "可租"
+                                // landlordCode 會從 oldRoom 物件中自動保留，不需再次指定，
+                                // 因為我們已經確保了 oldRoom 和 newRoom 都屬於同一個房東
+                            )
+                            roomRepository.updateRoom(updatedOldRoom)
+
+                            // 3. 完整更新新房間資訊
+                            val updatedNewRoom = newRoom.copy(
+                                tenantId = tenant.id,
+                                tenantName = tenant.username,
+                                status = "出租中",
+                                landlordCode = landlordCode // 確保新房間也寫入正確的 landlordCode
+                            )
+                            roomRepository.updateRoom(updatedNewRoom)
 
                             Toast.makeText(context, "已同意並更新雲端與本地資料", Toast.LENGTH_SHORT).show()
                         } else {
                             Toast.makeText(context, "更新失敗：找不到相關資料 (房客: ${tenant?.id}, 舊房: ${oldRoom?.roomNumber}, 新房: ${newRoom?.roomNumber})", Toast.LENGTH_LONG).show()
                         }
+                        // --- 【*** 核心修改：到這裡結束 ***】 ---
                     } else {
                         Toast.makeText(context, "已拒絕該請求", Toast.LENGTH_SHORT).show()
                     }

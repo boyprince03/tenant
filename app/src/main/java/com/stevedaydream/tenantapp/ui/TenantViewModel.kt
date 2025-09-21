@@ -23,6 +23,7 @@ data class TenantUiState(
     val latestRequest: RoomChangeRequest? = null,
     val paymentStatus: String = "查詢中...",
     val isLoading: Boolean = true,
+    val isRefreshing: Boolean = false, // 【*** 新增 ***】 用於刷新時的 UI 狀態
     val error: String? = null
 )
 
@@ -36,7 +37,9 @@ class TenantViewModel(
     private val roomDao: RoomDao,
     private val announcementDao: AnnouncementDao,
     private val paymentDao: PaymentDao,
-    private val requestRepository: RoomChangeRequestRepository
+    private val requestRepository: RoomChangeRequestRepository,
+    private val userRepository: UserRepository, // 【*** 新增 ***】
+    private val roomRepository: RoomRepository  // 【*** 新增 ***】
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(TenantUiState())
@@ -44,6 +47,38 @@ class TenantViewModel(
 
     init {
         loadInitialData()
+    }
+    /**
+     * 【*** 新增此函式 ***】
+     * 當使用者手動觸發刷新時呼叫。
+     * 此函式會從雲端拉取最新的使用者、房東和房間資料。
+     */
+    fun onRefresh() {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isRefreshing = true) }
+            try {
+                // 1. 刷新目前使用者的資料
+                userRepository.refreshUser(userId)
+
+                // 2. 從資料庫讀取剛剛刷新後的使用者資料
+                val currentUser = userDao.getUserById(userId).first()
+
+                // 3. 根據使用者資料，刷新對應的房東和房間資料
+                currentUser?.boundLandlordCode?.let {
+                    userRepository.refreshLandlordByCode(it)
+                }
+                currentUser?.boundRoomNumber?.let {
+                    roomRepository.refreshRoomByNumber(it)
+                }
+                // 資料刷新後，原有的 loadInitialData 中的 Flow 會自動監聽到變更並更新 UI
+
+            } catch (e: Exception) {
+                _uiState.update { it.copy(error = "刷新失敗: ${e.message}") }
+            } finally {
+                // 4. 更新結束，解除刷新狀態
+                _uiState.update { it.copy(isRefreshing = false) }
+            }
+        }
     }
 
     private fun loadInitialData() {
@@ -124,7 +159,10 @@ class TenantViewModel(
 class TenantViewModelFactory(
     private val userId: String,
     private val db: AppDatabase,
-    private val requestRepository: RoomChangeRequestRepository
+    private val requestRepository: RoomChangeRequestRepository,
+    // 【*** 新增 ***】
+    private val userRepository: UserRepository,
+    private val roomRepository: RoomRepository
 ) : ViewModelProvider.Factory {
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         if (modelClass.isAssignableFrom(TenantViewModel::class.java)) {
@@ -135,7 +173,9 @@ class TenantViewModelFactory(
                 db.roomDao(),
                 db.announcementDao(),
                 db.paymentDao(),
-                requestRepository
+                requestRepository,
+                userRepository, // 傳遞 UserRepository
+                roomRepository  // 傳遞 RoomRepository
             ) as T
         }
         throw IllegalArgumentException("Unknown ViewModel class")
