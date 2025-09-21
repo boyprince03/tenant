@@ -39,54 +39,11 @@ fun LandlordHomeScreen(
 
     var expanded by remember { mutableStateOf(false) }
     var codeVisible by remember { mutableStateOf(false) }
-    var showResetConfirmDialog by remember { mutableStateOf(false) }
+    // var showResetConfirmDialog by remember { mutableStateOf(false) } // <-- 已移除
 
     fun maskCode(code: String): String {
         return if (code.length <= 4) "*".repeat(code.length)
         else code.take(2) + "*".repeat(code.length - 4) + code.takeLast(2)
-    }
-
-    if (showResetConfirmDialog) {
-        AlertDialog(
-            onDismissRequest = { showResetConfirmDialog = false },
-            title = { Text("確認重置？", fontWeight = FontWeight.Bold) },
-            text = { Text("此操作將會刪除 Firestore 雲端資料庫中的所有資料，且無法復原。確定要繼續嗎？") },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        showResetConfirmDialog = false
-                        viewModel.resetDatabase { success ->
-                            if (success) {
-                                Toast.makeText(context, "Firestore 資料庫已重置！請重新啟動 App。", Toast.LENGTH_LONG).show()
-                                onLogout()
-                            } else {
-                                Toast.makeText(context, "重置失敗，請檢查 Logcat。", Toast.LENGTH_SHORT).show()
-                            }
-                        }
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
-                ) { Text("確定刪除") }
-            },
-            dismissButton = {
-                TextButton(onClick = { showResetConfirmDialog = false }) { Text("取消") }
-            }
-        )
-    }
-
-    if (uiState.isResetting) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Color.Black.copy(alpha = 0.5f))
-                .clickable(enabled = false, onClick = {}),
-            contentAlignment = Alignment.Center
-        ) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                CircularProgressIndicator(color = Color.White)
-                Spacer(Modifier.height(16.dp))
-                Text("正在重置資料庫...", color = Color.White, style = MaterialTheme.typography.titleLarge)
-            }
-        }
     }
 
     Scaffold(
@@ -114,15 +71,6 @@ fun LandlordHomeScreen(
                             onClick = {
                                 expanded = false
                                 onLogout()
-                            }
-                        )
-                        Divider()
-                        DropdownMenuItem(
-                            text = { Text("重置雲端資料庫 (開發用)", color = MaterialTheme.colorScheme.error) },
-                            leadingIcon = { Icon(Icons.Default.DeleteForever, contentDescription = "重置", tint = MaterialTheme.colorScheme.error)},
-                            onClick = {
-                                expanded = false
-                                showResetConfirmDialog = true
                             }
                         )
                     }

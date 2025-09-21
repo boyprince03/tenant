@@ -15,7 +15,7 @@ data class LandlordUiState(
     val announcements: List<Announcement> = emptyList(),
     val repairReports: List<RepairReport> = emptyList(),
     val pendingChangeRequests: List<RoomChangeRequest> = emptyList(),
-    val isResetting: Boolean = false,
+    // val isResetting: Boolean = false, // <-- 已移除
     val isLoading: Boolean = true
 )
 
@@ -28,8 +28,8 @@ class LandlordViewModel(
     userDao: UserDao,
     announcementDao: AnnouncementDao,
     repairReportDao: RepairReportDao,
-    requestRepository: RoomChangeRequestRepository,
-    private val adminRepository: AdminRepository
+    requestRepository: RoomChangeRequestRepository
+    // private val adminRepository: AdminRepository // <-- 已移除
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(LandlordUiState())
@@ -62,18 +62,7 @@ class LandlordViewModel(
         }
     }
 
-    /**
-     * 重置整個 Firestore 資料庫 (僅供開發使用)
-     * @param onResult 操作完成後的回呼，傳回操作是否成功。
-     */
-    fun resetDatabase(onResult: (Boolean) -> Unit) {
-        viewModelScope.launch {
-            _uiState.update { it.copy(isResetting = true) }
-            val success = adminRepository.resetEntireDatabase()
-            _uiState.update { it.copy(isResetting = false) }
-            onResult(success)
-        }
-    }
+    // <-- resetDatabase 函式已完全移除 -->
 }
 
 /**
@@ -82,8 +71,8 @@ class LandlordViewModel(
 class LandlordViewModelFactory(
     private val landlordId: String,
     private val db: AppDatabase,
-    private val requestRepository: RoomChangeRequestRepository,
-    private val adminRepository: AdminRepository
+    private val requestRepository: RoomChangeRequestRepository
+    // private val adminRepository: AdminRepository // <-- 已移除
 ) : ViewModelProvider.Factory {
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         if (modelClass.isAssignableFrom(LandlordViewModel::class.java)) {
@@ -93,8 +82,8 @@ class LandlordViewModelFactory(
                 db.userDao(),
                 db.announcementDao(),
                 db.repairReportDao(),
-                requestRepository,
-                adminRepository
+                requestRepository
+                // adminRepository // <-- 已移除
             ) as T
         }
         throw IllegalArgumentException("Unknown ViewModel class")

@@ -20,12 +20,15 @@ data class AdminUiState(
     val electricMeterRecords: List<ElectricMeterRecord> = emptyList(),
     val isLoading: Boolean = true,
 
-    // 【*** 新增狀態 ***】
+    // 指派房間功能相關狀態
     val landlords: List<User> = emptyList(),
     val unassignedRooms: List<RoomEntity> = emptyList(),
     val selectedLandlord: User? = null,
     val selectedRoomIdsToAssign: Set<String> = emptySet(),
-    val assignmentMessage: String? = null
+    val assignmentMessage: String? = null,
+
+    // 重置資料庫功能相關狀態
+    val isResetting: Boolean = false
 )
 
 class AdminViewModel(private val adminRepository: AdminRepository) : ViewModel() {
@@ -47,7 +50,6 @@ class AdminViewModel(private val adminRepository: AdminRepository) : ViewModel()
             val requests = adminRepository.getAllRoomChangeRequests(5)
             val payments = adminRepository.getAllPayments(5)
             val records = adminRepository.getAllElectricMeterRecords(5)
-            // 【*** 新增 ***】
             val landlords = adminRepository.getAllLandlords()
             val unassignedRooms = adminRepository.getUnassignedRooms()
 
@@ -60,15 +62,13 @@ class AdminViewModel(private val adminRepository: AdminRepository) : ViewModel()
                     roomChangeRequests = requests,
                     payments = payments,
                     electricMeterRecords = records,
-                    landlords = landlords, // 【*** 新增 ***】
-                    unassignedRooms = unassignedRooms, // 【*** 新增 ***】
+                    landlords = landlords,
+                    unassignedRooms = unassignedRooms,
                     isLoading = false
                 )
             }
         }
     }
-
-    // --- 【*** 以下為新增的方法 ***】 ---
 
     /**
      * 處理使用者在下拉選單中選擇房東的事件。
@@ -124,6 +124,20 @@ class AdminViewModel(private val adminRepository: AdminRepository) : ViewModel()
     fun clearAssignmentMessage() {
         _uiState.update { it.copy(assignmentMessage = null) }
     }
+
+    /**
+     * 重置整個 Firestore 資料庫 (僅供開發使用)
+     * @param onResult 操作完成後的回呼，傳回操作是否成功。
+     */
+    fun resetDatabase(onResult: (Boolean) -> Unit) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isResetting = true) }
+            val success = adminRepository.resetEntireDatabase()
+            // 無論成功或失敗，都結束重置狀態
+            _uiState.update { it.copy(isResetting = false) }
+            onResult(success)
+        }
+    }
 }
 
 class AdminViewModelFactory(private val adminRepository: AdminRepository) : ViewModelProvider.Factory {
@@ -135,3 +149,4 @@ class AdminViewModelFactory(private val adminRepository: AdminRepository) : View
         throw IllegalArgumentException("Unknown ViewModel class")
     }
 }
+

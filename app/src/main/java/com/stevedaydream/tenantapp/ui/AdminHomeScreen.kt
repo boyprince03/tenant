@@ -1,16 +1,19 @@
 package com.stevedaydream.tenantapp.ui
 
 import android.widget.Toast
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.DeleteForever
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -30,6 +33,7 @@ fun AdminHomeScreen(
     val viewModel: AdminViewModel = viewModel(factory = AdminViewModelFactory(adminRepository))
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
+    var showResetConfirmDialog by remember { mutableStateOf(false) }
 
     // 【*** 新增 ***】
     // 監聽指派訊息的變化，並顯示 Toast
@@ -40,6 +44,50 @@ fun AdminHomeScreen(
         }
     }
 
+// 確認對話框
+    if (showResetConfirmDialog) {
+        AlertDialog(
+            onDismissRequest = { showResetConfirmDialog = false },
+            title = { Text("確認重置？", fontWeight = FontWeight.Bold) },
+            text = { Text("此操作將會刪除 Firestore 雲端資料庫中的所有資料，且無法復原。確定要繼續嗎？") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showResetConfirmDialog = false
+                        viewModel.resetDatabase { success ->
+                            if (success) {
+                                Toast.makeText(context, "Firestore 資料庫已重置！請重新啟動 App。", Toast.LENGTH_LONG).show()
+                                onLogout() // 重置後通常需要登出
+                            } else {
+                                Toast.makeText(context, "重置失敗，請檢查 Logcat。", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) { Text("確定刪除") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showResetConfirmDialog = false }) { Text("取消") }
+            }
+        )
+    }
+
+    // 載入遮罩
+    if (uiState.isResetting) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.5f))
+                .clickable(enabled = false, onClick = {}),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                CircularProgressIndicator(color = Color.White)
+                Spacer(Modifier.height(16.dp))
+                Text("正在重置資料庫...", color = Color.White, style = MaterialTheme.typography.titleLarge)
+            }
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -65,6 +113,27 @@ fun AdminHomeScreen(
                 contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
+                item {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                    ) {
+                        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text("危險操作區域", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                            Text("以下按鈕會對資料庫造成永久性改變，請謹慎操作。", style = MaterialTheme.typography.bodySmall)
+                            Divider()
+                            Button(
+                                onClick = { showResetConfirmDialog = true },
+                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Icon(Icons.Default.DeleteForever, contentDescription = "重置資料庫", modifier = Modifier.padding(end = 8.dp))
+                                Text("重置雲端資料庫")
+                            }
+                        }
+                    }
+                }
                 // 【*** 新增卡片 ***】
                 item {
                     AssignRoomCard(

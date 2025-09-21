@@ -276,7 +276,7 @@ fun AppNavGraph(navController: NavHostController, db: AppDatabase) {
         ) { backStackEntry ->
             val userId = backStackEntry.arguments?.getString("userId") ?: ""
             // 建立 Factory 並傳入
-            val factory = LandlordViewModelFactory(userId, db, requestRepository, adminRepository)
+            val factory = LandlordViewModelFactory(userId, db, requestRepository)
             LandlordHomeScreen(
                 navController = navController,
                 viewModelFactory = factory,
