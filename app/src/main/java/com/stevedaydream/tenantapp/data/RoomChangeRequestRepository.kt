@@ -18,19 +18,25 @@ class RoomChangeRequestRepository(private val requestDao: RoomChangeRequestDao) 
     private val requestsCollection = firestore.collection("room_change_requests")
 
     /**
-     * 新增一筆換房請求到 Firestore。
-     * @param request 要新增的請求物件 (id 應已由 UUID 產生)。
+     * [寫入]
+     * 新增一筆換房請求。
      */
     suspend fun insert(request: RoomChangeRequest) {
+        // 1. 操作雲端 (物件在建立時已產生 UUID)
         requestsCollection.document(request.id).set(request).await()
+        // 2. 更新本地
+        requestDao.insert(request)
     }
 
     /**
-     * 更新一筆換房請求到 Firestore (例如：審核通過/拒絕)。
-     * @param request 包含更新後資料的請求物件。
+     * [修改]
+     * 更新一筆換房請求 (例如：審核通過/拒絕)。
      */
     suspend fun update(request: RoomChangeRequest) {
+        // 1. 操作雲端
         requestsCollection.document(request.id).set(request).await()
+        // 2. 更新本地
+        requestDao.update(request)
     }
 
     /**

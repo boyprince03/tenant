@@ -3,6 +3,7 @@ package com.stevedaydream.tenantapp.ui
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -18,6 +19,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Divider
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -39,29 +41,19 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import com.stevedaydream.tenantapp.data.Announcement
-import com.stevedaydream.tenantapp.data.AnnouncementDao
-import com.stevedaydream.tenantapp.data.RoomDao
-import com.stevedaydream.tenantapp.data.User
-
-// 保持與原程式碼相同的 LoginState
-object LoginState {
-    var currentUser: User? = null
-}
 
 @Composable
 fun VisitorHomeScreen(
-    onNavigate: (String) -> Unit,
-    announcementDao: AnnouncementDao,
-    roomDao: RoomDao,
-    navController: NavHostController
+    navController: NavHostController,
+    viewModelFactory: VisitorViewModelFactory
 ) {
-    val announcements by announcementDao.getAll().collectAsState(initial = emptyList())
-    val rooms by roomDao.getAllRooms().collectAsState(initial = emptyList())
-    var menuExpanded by remember { mutableStateOf(false) }
+    val viewModel: VisitorViewModel = viewModel(factory = viewModelFactory)
+    val uiState by viewModel.uiState.collectAsState()
 
-    // --- 【核心修改：新增狀態，控制 Dialog 顯示】 ---
+    var menuExpanded by remember { mutableStateOf(false) }
     var showDetailDialog by remember { mutableStateOf<Announcement?>(null) }
 
     Scaffold(
@@ -93,147 +85,128 @@ fun VisitorHomeScreen(
             )
         }
     ) { innerPadding ->
-        Column(
-            modifier = Modifier
-                .padding(innerPadding)
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            Text(
-                "📢 最新公告",
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold
-            )
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
-                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-            ) {
-                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    if (announcements.isEmpty()) {
-                        Text("目前沒有公告", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    } else {
-                        announcements.take(3).forEachIndexed { index, ann ->
-                            // --- 【核心修改：將公告內容包裝成可點擊】 ---
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable { showDetailDialog = ann }
-                            ) {
-                                Text(
-                                    ann.title,
-                                    style = MaterialTheme.typography.bodyLarge,
-                                    fontWeight = FontWeight.SemiBold
-                                )
-                                Text(
-                                    ann.content,
-                                    maxLines = 2,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                            if (index < announcements.take(3).size - 1) {
-                                Divider(
-                                    modifier = Modifier.padding(vertical = 4.dp),
-                                    color = MaterialTheme.colorScheme.outlineVariant
-                                )
-                            }
-                        }
-                    }
-                }
+        if (uiState.isLoading) {
+            Box(Modifier.fillMaxSize().padding(innerPadding), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator()
             }
-
-            Text(
-                "🏠 可租房間",
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold
-            )
-            val availableRooms = rooms.filter { it.status.contains("可租", ignoreCase = true) }
-            if (availableRooms.isEmpty()) {
+        } else {
+            Column(
+                modifier = Modifier
+                    .padding(innerPadding)
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Text(
+                    "📢 最新公告",
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold
+                )
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
                     elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
                 ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Text(
-                            "目前沒有可租房間",
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        if (uiState.announcements.isEmpty()) {
+                            Text("目前沒有公告", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        } else {
+                            uiState.announcements.take(3).forEachIndexed { index, ann ->
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable { showDetailDialog = ann }
+                                ) {
+                                    Text(
+                                        ann.title,
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                    Text(
+                                        ann.content,
+                                        maxLines = 2,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                if (index < uiState.announcements.take(3).size - 1) {
+                                    Divider(
+                                        modifier = Modifier.padding(vertical = 4.dp),
+                                        color = MaterialTheme.colorScheme.outlineVariant
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
-            } else {
-                availableRooms.forEach {
+
+                Text(
+                    "🏠 可租房間",
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold
+                )
+                if (uiState.availableRooms.isEmpty()) {
                     Card(
                         modifier = Modifier.fillMaxWidth(),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
                     ) {
-                        Column(modifier = Modifier.padding(12.dp)) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
                             Text(
-                                "房號: ${it.roomNumber}",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Text(
-                                "房型: ${it.type} / 租金: ${it.rentAmount}",
-                                style = MaterialTheme.typography.bodyMedium,
+                                "目前沒有可租房間",
+                                style = MaterialTheme.typography.bodyLarge,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                     }
+                } else {
+                    uiState.availableRooms.forEach {
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                Text(
+                                    "房號: ${it.roomNumber}",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    "房型: ${it.type} / 租金: ${it.rentAmount}",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
                 }
-            }
 
-            ElevatedButton(
-                onClick = {
-                    val user = LoginState.currentUser
-                    if (user == null) {
-                        onNavigate("login")
-                    } else {
-                        if (user.role == "tenant") {
-                            onNavigate("electricity/tenant")
-                        } else if (user.role == "landlord") {
-                            onNavigate("electricity/landlord")
-                        }
-                    }
-                },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Icon(Icons.Default.FlashOn, contentDescription = "查詢電費", modifier = Modifier.padding(end = 8.dp))
-                Text("查詢當月電費", style = MaterialTheme.typography.bodyLarge)
-            }
+                ElevatedButton(
+                    onClick = { navController.navigate("login") }, // 訪客點擊一律導向登入
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.Default.FlashOn, contentDescription = "查詢電費", modifier = Modifier.padding(end = 8.dp))
+                    Text("查詢當月電費", style = MaterialTheme.typography.bodyLarge)
+                }
 
-            ElevatedButton(
-                onClick = {
-                    val user = LoginState.currentUser
-                    if (user == null) {
-                        onNavigate("login")
-                    } else {
-                        if (user.role == "tenant") {
-                            onNavigate("tenant_pay")
-                        } else if (user.role == "landlord") {
-                            onNavigate("landlord_pay")
-                        }
-                    }
-                },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Icon(Icons.Default.MonetizationOn, contentDescription = "我要繳費", modifier = Modifier.padding(end = 8.dp))
-                Text("我要繳費", style = MaterialTheme.typography.bodyLarge)
+                ElevatedButton(
+                    onClick = { navController.navigate("login") }, // 訪客點擊一律導向登入
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.Default.MonetizationOn, contentDescription = "我要繳費", modifier = Modifier.padding(end = 8.dp))
+                    Text("我要繳費", style = MaterialTheme.typography.bodyLarge)
+                }
             }
         }
     }
 
-    // --- 【核心修改：新增詳細內容 Dialog】 ---
     if (showDetailDialog != null) {
         AlertDialog(
             onDismissRequest = { showDetailDialog = null },

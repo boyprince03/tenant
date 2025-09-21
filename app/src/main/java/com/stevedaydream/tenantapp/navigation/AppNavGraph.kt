@@ -22,6 +22,7 @@ import com.google.firebase.auth.FirebaseAuth
 import com.stevedaydream.tenantapp.data.*
 import com.stevedaydream.tenantapp.ui.*
 import kotlinx.coroutines.launch
+import androidx.lifecycle.viewmodel.compose.viewModel
 
 @Composable
 fun AppNavGraph(navController: NavHostController, db: AppDatabase) {
@@ -114,11 +115,11 @@ fun AppNavGraph(navController: NavHostController, db: AppDatabase) {
             )
         }
         composable("visitor_home") {
+            // 建立 Factory 並傳入
+            val factory = VisitorViewModelFactory(db.announcementDao(), db.roomDao())
             VisitorHomeScreen(
-                onNavigate = { navController.navigate(it) },
-                announcementDao = db.announcementDao(),
-                roomDao = db.roomDao(),
-                navController = navController
+                navController = navController,
+                viewModelFactory = factory
             )
         }
         // --- 管理員頁面 ---
@@ -200,10 +201,11 @@ fun AppNavGraph(navController: NavHostController, db: AppDatabase) {
             arguments = listOf(navArgument("userId") { type = NavType.StringType })
         ) { backStackEntry ->
             val userId = backStackEntry.arguments?.getString("userId") ?: ""
+            // 建立 Factory 並傳入
+            val factory = TenantViewModelFactory(userId, db, requestRepository)
             TenantHomeScreen(
-                userId = userId,
-                requestRepository = requestRepository,
-                onNavigate = { navController.navigate(it) },
+                navController = navController,
+                viewModelFactory = factory,
                 onLogout = {
                     authRepository.logout(context)
                     navController.navigate("visitor_home") { popUpTo(0) }
@@ -273,12 +275,11 @@ fun AppNavGraph(navController: NavHostController, db: AppDatabase) {
             arguments = listOf(navArgument("userId") { type = NavType.StringType })
         ) { backStackEntry ->
             val userId = backStackEntry.arguments?.getString("userId") ?: ""
-            LandlordHomeScreenWrapper(
-                userId = userId,
-                db = db,
-                roomRepository = roomRepository,
-                requestRepository = requestRepository,
-                onNavigate = { navController.navigate(it) },
+            // 建立 Factory 並傳入
+            val factory = LandlordViewModelFactory(userId, db, requestRepository, adminRepository)
+            LandlordHomeScreen(
+                navController = navController,
+                viewModelFactory = factory,
                 onLogout = {
                     authRepository.logout(context)
                     navController.navigate("visitor_home") { popUpTo(0) }
@@ -406,44 +407,3 @@ fun AppNavGraph(navController: NavHostController, db: AppDatabase) {
     }
 }
 
-
-/**
- * 輔助用的 Wrapper
- */
-@Composable
-fun LandlordHomeScreenWrapper(
-    userId: String,
-    db: AppDatabase,
-    roomRepository: RoomRepository,
-    requestRepository: RoomChangeRequestRepository,
-    onNavigate: (String) -> Unit,
-    onLogout: () -> Unit
-) {
-    var user by remember { mutableStateOf<User?>(null) }
-    val scope = rememberCoroutineScope()
-
-    LaunchedEffect(userId) {
-        scope.launch {
-            user = db.userDao().getUserById(userId)
-        }
-    }
-
-    user?.let { landlord ->
-        LandlordHomeScreen(
-            landlord = landlord,
-            requestRepository = requestRepository,
-            onNavigate = { route ->
-                when (route) {
-                    "room_manage" -> onNavigate("room_manage/${landlord.id}")
-                    "announcement" -> onNavigate("announcement/${landlord.id}")
-                    "electricity_query" -> onNavigate("electricity_query/${landlord.id}")
-                    "history" -> onNavigate("history/${landlord.id}")
-                    "room_change_approval" -> onNavigate("room_change_approval/${landlord.id}")
-                    "electricity/landlord" -> onNavigate("electricity/landlord")
-                    else -> onNavigate(route)
-                }
-            },
-            onLogout = onLogout
-        )
-    }
-}
