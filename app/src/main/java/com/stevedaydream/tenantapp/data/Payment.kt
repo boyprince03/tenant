@@ -5,13 +5,12 @@ import androidx.room.PrimaryKey
 
 @Entity(tableName = "payments")
 data class Payment(
-    // 【*** 修正：將 id 從 Int 改為 String ***】
     @PrimaryKey val id: String = "",
-    val roomNumber: String,
-    val recordMonth: String, // "YYYY-MM"
-    val rentAmount: Int,
-    val electricityFee: Int,
-    val totalAmount: Int,
+    val roomNumber: String = "",
+    val recordMonth: String = "", // "YYYY-MM"
+    val rentAmount: Int = 0,
+    val electricityFee: Int = 0,
+    val totalAmount: Int = 0,
     var isPaid: Boolean = false,
     val paymentDate: Long? = null // 繳費日期
 )

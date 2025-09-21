@@ -19,6 +19,8 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import com.stevedaydream.tenantapp.data.Announcement
+import com.stevedaydream.tenantapp.data.RoomEntity
+import com.stevedaydream.tenantapp.data.User
 
 @Composable
 fun TenantHomeScreen(
@@ -229,5 +231,59 @@ fun TenantHomeScreen(
                 }
             )
         }
+    }
+}
+
+/**
+ * 【*** 新增 ***】
+ * 顯示房間、房東和租客資訊的對話框 Composable。
+ */
+@Composable
+private fun RoomInfoDialog(
+    room: RoomEntity?,
+    landlord: User?,
+    tenant: User?,
+    paymentStatus: String,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("我的租屋資訊", fontWeight = FontWeight.Bold) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                InfoRow(label = "目前房號", value = room?.roomNumber ?: "未綁定")
+                InfoRow(label = "房東姓名", value = landlord?.username ?: "N/A")
+                InfoRow(label = "房東電話", value = landlord?.phone ?: "N/A")
+                Divider(modifier = Modifier.padding(vertical = 4.dp))
+                InfoRow(label = "租客姓名", value = tenant?.username ?: "N/A")
+                InfoRow(label = "月租金", value = "${room?.rentAmount ?: 0} 元")
+                InfoRow(label = "押金", value = "${room?.deposit ?: 0} 元")
+                InfoRow(label = "起租日", value = room?.rentStartDate?.ifBlank { "N/A" } ?: "N/A")
+                InfoRow(label = "到期日", value = room?.rentEndDate?.ifBlank { "N/A" } ?: "N/A")
+                Divider(modifier = Modifier.padding(vertical = 4.dp))
+                InfoRow(label = "當月繳費狀態", value = paymentStatus)
+            }
+        },
+        confirmButton = {
+            Button(onClick = onDismiss) {
+                Text("關閉")
+            }
+        }
+    )
+}
+
+/**
+ * 【*** 新增 ***】
+ * 用於在對話框中顯示標籤和值的輔助 Composable。
+ */
+@Composable
+private fun InfoRow(label: String, value: String) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            text = "$label:",
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.width(120.dp) // 統一標籤寬度以便對齊
+        )
+        Text(text = value)
     }
 }
