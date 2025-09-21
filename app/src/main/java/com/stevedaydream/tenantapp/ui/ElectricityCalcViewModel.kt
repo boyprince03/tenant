@@ -14,11 +14,9 @@ import java.text.SimpleDateFormat
 import java.util.*
 import kotlin.math.min
 
-// --- Factory ---
-// 【*** 修正：Factory 的 meterDao 參數改為 meterRepository ***】
 class ElectricityCalcViewModelFactory(
     private val roomDao: RoomDao,
-    private val meterRepository: ElectricMeterRepository, // 改為 Repository
+    private val meterRepository: ElectricMeterRepository,
     private val userRole: String,
     private val settingsManager: SettingsManager
 ) : ViewModelProvider.Factory {
@@ -33,7 +31,7 @@ class ElectricityCalcViewModelFactory(
 
 class ElectricityCalcViewModel(
     private val roomDao: RoomDao,
-    private val meterRepository: ElectricMeterRepository, // 改為 Repository
+    private val meterRepository: ElectricMeterRepository,
     private val userRole: String,
     private val settingsManager: SettingsManager
 ) : ViewModel() {
@@ -78,7 +76,6 @@ class ElectricityCalcViewModel(
         viewModelScope.launch {
             val rooms = _uiState.value.roomList
             val settings = _uiState.value.settings ?: return@launch
-            // 【*** 修正：使用 meterRepository 並正確處理 suspend ***】
             val recordsForMonth = rooms.map { room ->
                 meterRepository.getRecord(room.roomNumber, month)
             }.filterNotNull()
@@ -94,7 +91,6 @@ class ElectricityCalcViewModel(
             val used = mutableMapOf<String, Int>()
             val fees = mutableMapOf<String, Float>()
             for (room in rooms) {
-                // 【*** 修正：使用已載入的資料，並從 meterRepository 獲取上期資料 ***】
                 val currentRecord = recordsForMonth.find { it.roomNumber == room.roomNumber }
                 val previousRecord = meterRepository.getPreviousRecord(room.roomNumber, month)
 
@@ -139,12 +135,8 @@ class ElectricityCalcViewModel(
         }
     }
 
-    fun onShowSettingsDialog() {
-        _uiState.update { it.copy(showSettingsDialog = true) }
-    }
-    fun onDismissSettingsDialog() {
-        _uiState.update { it.copy(showSettingsDialog = false) }
-    }
+    fun onShowSettingsDialog() { _uiState.update { it.copy(showSettingsDialog = true) } }
+    fun onDismissSettingsDialog() { _uiState.update { it.copy(showSettingsDialog = false) } }
     fun saveSettings(settings: CalculationSettings) {
         viewModelScope.launch {
             settingsManager.saveSettings(settings)
@@ -174,14 +166,8 @@ class ElectricityCalcViewModel(
         }
     }
 
-    fun onShowMonthPicker() {
-        _uiState.update { it.copy(showMonthPicker = true) }
-    }
-
-    fun onDismissMonthPicker() {
-        _uiState.update { it.copy(showMonthPicker = false) }
-    }
-
+    fun onShowMonthPicker() { _uiState.update { it.copy(showMonthPicker = true) } }
+    fun onDismissMonthPicker() { _uiState.update { it.copy(showMonthPicker = false) } }
     fun onMonthSelected(year: Int, month: Int) {
         val selectedMonth = String.format("%04d-%02d", year, month + 1)
         changeMonth(selectedMonth)
@@ -189,26 +175,16 @@ class ElectricityCalcViewModel(
 
     fun onPreviousMonth() {
         val cal = Calendar.getInstance()
-        try {
-            cal.time = monthFormatter.parse(_uiState.value.currentMonth) ?: Date()
-        } catch (_: Exception) {
-            cal.time = Date()
-        }
+        try { cal.time = monthFormatter.parse(_uiState.value.currentMonth) ?: Date() } catch (_: Exception) { cal.time = Date() }
         cal.add(Calendar.MONTH, -1)
-        val newMonth = monthFormatter.format(cal.time)
-        changeMonth(newMonth)
+        changeMonth(monthFormatter.format(cal.time))
     }
 
     fun onNextMonth() {
         val cal = Calendar.getInstance()
-        try {
-            cal.time = monthFormatter.parse(_uiState.value.currentMonth) ?: Date()
-        } catch (_: Exception) {
-            cal.time = Date()
-        }
+        try { cal.time = monthFormatter.parse(_uiState.value.currentMonth) ?: Date() } catch (_: Exception) { cal.time = Date() }
         cal.add(Calendar.MONTH, 1)
-        val newMonth = monthFormatter.format(cal.time)
-        changeMonth(newMonth)
+        changeMonth(monthFormatter.format(cal.time))
     }
 
     fun onMeterValueChange(roomNumber: String, value: String) {
@@ -222,9 +198,7 @@ class ElectricityCalcViewModel(
 
     fun onLockToggle(roomNumber: String) {
         val newLockedMap = _uiState.value.lockedRoomMap.toMutableMap()
-        val isLocked = newLockedMap[roomNumber] == true
-        newLockedMap[roomNumber] = !isLocked
-
+        newLockedMap[roomNumber] = !(_uiState.value.lockedRoomMap[roomNumber] ?: false)
         _uiState.update { it.copy(lockedRoomMap = newLockedMap) }
     }
 
@@ -233,32 +207,21 @@ class ElectricityCalcViewModel(
             val rooms = _uiState.value.roomList
             val currentMonth = _uiState.value.currentMonth
             val meterMap = _uiState.value.meterMap
-
             val recordsToSave = mutableListOf<ElectricMeterRecord>()
             var hasInvalidInput = false
+
             for (room in rooms) {
                 if (_uiState.value.lockedRoomMap[room.roomNumber] != true) {
                     val meterValueStr = meterMap[room.roomNumber]
                     if (!meterValueStr.isNullOrBlank()) {
                         val v = meterValueStr.toIntOrNull()
                         if (v != null) {
-                            // 【*** 修正：使用 meterRepository ***】
                             val previousRecord = meterRepository.getPreviousRecord(room.roomNumber, currentMonth)
                             if (previousRecord != null && v < previousRecord.meterValue) {
-                                hasInvalidInput = true
                                 _uiState.update { it.copy(message = "${room.roomNumber}房度數不可小於上期", messageType = MessageType.Error) }
                                 return@launch
                             }
-
-                            recordsToSave.add(
-                                ElectricMeterRecord(
-                                    // id 會由 repository 決定，這裡留空
-                                    id = "",
-                                    roomNumber = room.roomNumber,
-                                    recordMonth = currentMonth,
-                                    meterValue = v
-                                )
-                            )
+                            recordsToSave.add(ElectricMeterRecord(id = "", roomNumber = room.roomNumber, recordMonth = currentMonth, meterValue = v))
                         } else {
                             hasInvalidInput = true
                         }
@@ -272,46 +235,25 @@ class ElectricityCalcViewModel(
             }
 
             if (recordsToSave.isNotEmpty()) {
-                // 【*** 修正：使用 meterRepository ***】
                 meterRepository.insertOrUpdateRecords(recordsToSave)
-                _uiState.update {
-                    it.copy(
-                        message = "成功儲存 ${recordsToSave.size} 筆到雲端",
-                        messageType = MessageType.Success
-                    )
-                }
+                _uiState.update { it.copy(message = "成功儲存 ${recordsToSave.size} 筆到雲端", messageType = MessageType.Success) }
                 loadDataForMonth(currentMonth)
             } else {
-                _uiState.update {
-                    it.copy(
-                        message = "沒有可儲存的新度數",
-                        messageType = MessageType.Info
-                    )
-                }
+                _uiState.update { it.copy(message = "沒有可儲存的新度數", messageType = MessageType.Info) }
             }
         }
     }
 
-    private fun calculateTieredFee(
-        totalUsage: Int,
-        tiers: List<Pair<Double, Double>>,
-        numberOfMeters: Int
-    ): ElectricityFeeResult {
+    private fun calculateTieredFee(totalUsage: Int, tiers: List<Pair<Double, Double>>, numberOfMeters: Int): ElectricityFeeResult {
         val usageAsDouble = totalUsage.toDouble()
-        if (usageAsDouble <= 0) {
-            return ElectricityFeeResult(0.0, 0.0, 0.0, 0.0, "NoUsage")
-        }
+        if (usageAsDouble <= 0) return ElectricityFeeResult(0.0, 0.0, 0.0, 0.0, "NoUsage")
 
-        val sharedTiers = tiers.map { (totalRange, rate) ->
-            Pair(totalRange / numberOfMeters, rate)
-        }
-
+        val sharedTiers = tiers.map { (totalRange, rate) -> Pair(totalRange / numberOfMeters, rate) }
         var tieredFee = 0.0
         var remainingUsage = usageAsDouble
 
         for ((sharedRange, rate) in sharedTiers) {
             if (remainingUsage > 0) {
-                // 【*** 修正：將 minOF 改為 kotlin.math.min ***】
                 val usageInTier = min(remainingUsage, sharedRange)
                 tieredFee += usageInTier * rate
                 remainingUsage -= usageInTier
@@ -321,11 +263,9 @@ class ElectricityCalcViewModel(
         }
 
         val averageRate = if (usageAsDouble > 0) tieredFee / usageAsDouble else 0.0
-
         val finalFee: Double
         val calculationMethod: String
 
-        // 費率不足 5 元以 5 元計 (假設)
         if (averageRate < 5.0) {
             finalFee = usageAsDouble * 5.0
             calculationMethod = "MinimumRate"
@@ -334,13 +274,9 @@ class ElectricityCalcViewModel(
             calculationMethod = "Tiered"
         }
 
-        return ElectricityFeeResult(
-            totalUsage = usageAsDouble,
-            tieredFee = tieredFee,
-            averageRate = averageRate,
-            finalFee = finalFee,
-            calculationMethod = calculationMethod
-        )
+        // 【*** 错误修复 ***】
+        // 将 int 类型的 totalUsage 改为 double 类型的 usageAsDouble 传递给 ElectricityFeeResult
+        return ElectricityFeeResult(usageAsDouble, tieredFee, averageRate, finalFee, calculationMethod)
     }
 
     data class ElectricityFeeResult(

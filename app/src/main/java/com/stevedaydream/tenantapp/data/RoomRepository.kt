@@ -4,12 +4,11 @@ import android.util.Log
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ktx.toObjects
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 
-class RoomRepository(private val roomDao: RoomDao) {
+class RoomRepository(private val roomDao: RoomDao, private val coroutineScope: CoroutineScope) {
 
     private val firestore = FirebaseFirestore.getInstance()
     private val roomsCollection = firestore.collection("rooms")
@@ -25,21 +24,17 @@ class RoomRepository(private val roomDao: RoomDao) {
 
         query.addSnapshotListener { snapshot, error ->
             if (error != null) {
-                Log.e("RoomRepository", "Listen failed.", error)
+                Log.e("RoomRepository", "Listen failed for landlord $landlordCode.", error)
                 return@addSnapshotListener
             }
 
             if (snapshot != null) {
                 val rooms = snapshot.toObjects<RoomEntity>()
-                CoroutineScope(Dispatchers.IO).launch {
-                    // 當雲端有變動，就更新本地
-                    roomDao.insertRooms(rooms)
+                coroutineScope.launch {
+                    // 當雲端有變動，就用最新的資料替換本地的資料
+                    roomDao.replaceRoomsForLandlord(landlordCode, rooms)
                 }
-            } else {
-                CoroutineScope(Dispatchers.IO).launch {
-                    roomDao.deleteRoomsByLandlordCode(landlordCode)
-                }
-            }
+            } // Removed the else block that would delete rooms on snapshot == null
         }
         // UI 永遠從本地 Room 讀取
         return roomDao.getRoomsByLandlordCodeFlow(landlordCode)
@@ -47,27 +42,30 @@ class RoomRepository(private val roomDao: RoomDao) {
 
     /**
      * [一次性讀取]
-     * 從 Firestore 獲取可租用的房間 (例如給租客選擇時使用)。
-     * 讀取後也會更新本地快取。
+     * 從 Firestore 獲取特定房東的可租用房間。
+     * 讀取後也會更新本地快取中對應的房間。
+     * 資料始終從本地資料庫讀取。
      */
     suspend fun getAvailableRoomsForLandlord(landlordCode: String): List<RoomEntity> {
-        return try {
+        try {
             val snapshot = roomsCollection
                 .whereEqualTo("landlordCode", landlordCode)
                 .whereEqualTo("status", "可租")
                 .get()
                 .await()
-            val rooms = snapshot.toObjects(RoomEntity::class.java)
-            // 將最新的可租房間資訊更新到本地
-            CoroutineScope(Dispatchers.IO).launch {
-                roomDao.insertRooms(rooms)
+            val roomsFromFirestore = snapshot.toObjects(RoomEntity::class.java)
+            // 將最新的可租房間資訊更新到本地 (只更新這些被拉取的房間)
+            if (roomsFromFirestore.isNotEmpty()) {
+                 coroutineScope.launch {
+                    roomDao.insertRooms(roomsFromFirestore) // insertRooms uses OnConflictStrategy.REPLACE
+                }.join() // Wait for cache update before reading from it
             }
-            rooms
         } catch (e: Exception) {
-            Log.e("RoomRepository", "Error getting available rooms", e)
-            // 網路失敗時，從本地讀取
-            roomDao.getRoomsByLandlordCode(landlordCode).filter { it.status == "可租" }
+            Log.e("RoomRepository", "Error getting available rooms from Firestore for landlord $landlordCode", e)
+            // 網路失敗時，不影響後續從本地讀取的操作
         }
+        // 總是從本地讀取，無論 Firestore 是否成功
+        return roomDao.getRoomsByLandlordCode(landlordCode).filter { it.status == "可租" }
     }
 
     /**

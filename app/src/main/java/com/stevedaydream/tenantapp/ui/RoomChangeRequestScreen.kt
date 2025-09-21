@@ -2,13 +2,12 @@ package com.stevedaydream.tenantapp.ui
 
 import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
-
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -39,15 +38,21 @@ fun RoomChangeRequestScreen(
     var isLoading by remember { mutableStateOf(true) }
 
     LaunchedEffect(userId) {
-        val user = userDao.getUserById(userId)
-        currentUser = user
-        if (user?.boundLandlordCode != null) {
-            val allRooms = roomDao.getRoomsByLandlordCode(user.boundLandlordCode!!)
-            availableRooms = allRooms.filter {
-                it.status.contains("可租", ignoreCase = true) && it.roomNumber != user.boundRoomNumber
+        isLoading = true
+        userDao.getUserById(userId).collect { userFromFlow ->
+            currentUser = userFromFlow
+            if (userFromFlow?.boundLandlordCode != null) {
+                val allRooms = roomDao.getRoomsByLandlordCode(userFromFlow.boundLandlordCode!!)
+                availableRooms = allRooms.filter {
+                    val userCurrentRoomNumber = userFromFlow.boundRoomNumber
+                    it.status.contains("可租", ignoreCase = true) &&
+                            (userCurrentRoomNumber == null || it.roomNumber != userCurrentRoomNumber)
+                }
+            } else {
+                availableRooms = emptyList()
             }
+            isLoading = false
         }
-        isLoading = false
     }
 
     Scaffold(
@@ -56,7 +61,7 @@ fun RoomChangeRequestScreen(
                 title = { Text("申請更換房間") },
                 navigationIcon = {
                     IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "返回")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
                     }
                 }
             )
@@ -67,16 +72,29 @@ fun RoomChangeRequestScreen(
                 .fillMaxSize()
                 .padding(innerPadding)
                 .padding(16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
         ) {
             if (isLoading) {
                 CircularProgressIndicator()
+            } else if (currentUser == null) {
+                Text("無法載入使用者資訊。")
+            } else if (currentUser?.boundLandlordCode == null) {
+                Text("您目前未綁定任何房東，無法申請更換房間。")
             } else if (availableRooms.isEmpty()) {
                 Text("目前沒有其他可更換的房間。")
             } else {
-                Text("請選擇您想更換的新房間：", style = MaterialTheme.typography.titleMedium)
-                Spacer(Modifier.height(16.dp))
-                LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                // --- 【*** 核心修正：移除外部的 Column + verticalScroll，改為使用單一的 LazyColumn 來佈局 ***】 ---
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(8.dp) // 統一項目間距
+                ) {
+                    item {
+                        Text("請選擇您想更換的新房間：", style = MaterialTheme.typography.titleMedium)
+                        Spacer(Modifier.height(8.dp))
+                    }
+
                     items(availableRooms, key = { it.id }) { room ->
                         RoomSelectionCard(
                             room = room,
@@ -84,34 +102,39 @@ fun RoomChangeRequestScreen(
                             onClick = { selectedRoom = room }
                         )
                     }
-                }
-                Spacer(Modifier.height(24.dp))
-                Button(
-                    onClick = {
-                        val user = currentUser
-                        val room = selectedRoom
-                        if (user != null && room != null && user.boundRoomNumber != null && user.boundLandlordCode != null) {
-                            scope.launch {
-                                val newRequest = RoomChangeRequest(
-                                    tenantId = user.id,
-                                    tenantName = user.username,
-                                    landlordCode = user.boundLandlordCode!!,
-                                    currentRoomNumber = user.boundRoomNumber!!,
-                                    requestedRoomNumber = room.roomNumber
-                                )
-                                // 【*** 核心修正：重新加入此行程式碼 ***】
-                                requestRepository.insert(newRequest)
-                                Toast.makeText(context, "請求已送出，請靜待房東審核。", Toast.LENGTH_LONG).show()
-                                navController.popBackStack()
-                            }
-                        }
-                    },
-                    enabled = selectedRoom != null,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("確認送出申請")
-                }
 
+                    item {
+                        Spacer(Modifier.height(16.dp))
+                        Button(
+                            onClick = {
+                                val user = currentUser
+                                val room = selectedRoom
+                                if (user != null && room != null && user.boundRoomNumber != null && user.boundLandlordCode != null) {
+                                    scope.launch {
+                                        val newRequest = RoomChangeRequest(
+                                            tenantId = user.id,
+                                            tenantName = user.username,
+                                            landlordCode = user.boundLandlordCode!!,
+                                            currentRoomNumber = user.boundRoomNumber!!,
+                                            requestedRoomNumber = room.roomNumber,
+                                            status = "pending",
+                                            requestDate = System.currentTimeMillis()
+                                        )
+                                        requestRepository.insert(newRequest)
+                                        Toast.makeText(context, "請求已送出，請靜待房東審核。", Toast.LENGTH_LONG).show()
+                                        navController.popBackStack()
+                                    }
+                                } else {
+                                    Toast.makeText(context, "無法送出請求，使用者資訊不完整。", Toast.LENGTH_SHORT).show()
+                                }
+                            },
+                            enabled = selectedRoom != null && currentUser?.boundRoomNumber != null,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("確認送出申請")
+                        }
+                    }
+                }
             }
         }
     }

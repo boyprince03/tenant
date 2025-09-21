@@ -15,7 +15,6 @@ data class LandlordUiState(
     val announcements: List<Announcement> = emptyList(),
     val repairReports: List<RepairReport> = emptyList(),
     val pendingChangeRequests: List<RoomChangeRequest> = emptyList(),
-    // val isResetting: Boolean = false, // <-- 已移除
     val isLoading: Boolean = true
 )
 
@@ -25,11 +24,10 @@ data class LandlordUiState(
  */
 class LandlordViewModel(
     private val landlordId: String,
-    userDao: UserDao,
-    announcementDao: AnnouncementDao,
-    repairReportDao: RepairReportDao,
-    requestRepository: RoomChangeRequestRepository
-    // private val adminRepository: AdminRepository // <-- 已移除
+    private val userDao: UserDao, // Store as property if used elsewhere, or pass directly
+    private val announcementDao: AnnouncementDao,
+    private val repairReportDao: RepairReportDao,
+    private val requestRepository: RoomChangeRequestRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(LandlordUiState())
@@ -37,32 +35,63 @@ class LandlordViewModel(
 
     init {
         viewModelScope.launch {
-            val landlord = userDao.getUserById(landlordId)
-            if (landlord == null || landlord.landlordCode == null) {
-                _uiState.update { it.copy(isLoading = false, landlord = landlord) } // landlord可能為null
-                return@launch
-            }
+            _uiState.update { it.copy(isLoading = true) }
+            userDao.getUserById(landlordId).collectLatest { collectedLandlord ->
+                if (collectedLandlord == null) {
+                    _uiState.update { it.copy(isLoading = false, landlord = null) }
+                    return@collectLatest // Exit if landlord is not found
+                }
 
-            // 結合所有需要的資料流
-            combine(
-                announcementDao.getAll(),
-                repairReportDao.getAll(),
-                requestRepository.getRequestsByLandlord(landlord.landlordCode)
-            ) { announcements, reports, requests ->
-                LandlordUiState(
-                    landlord = landlord,
-                    announcements = announcements,
-                    repairReports = reports,
-                    pendingChangeRequests = requests.filter { it.status == "pending" },
-                    isLoading = false
-                )
-            }.collect { state ->
-                _uiState.value = state
+                // Check for landlordCode after confirming landlord is not null
+                if (collectedLandlord.landlordCode == null) {
+                    // Landlord exists but is not properly configured as a landlord (no landlordCode)
+                    // Update UI to show landlord info but indicate that landlord-specific data can't be loaded.
+                    // Or, treat as an error/incomplete state depending on business logic.
+                    _uiState.update { it.copy(isLoading = false, landlord = collectedLandlord, announcements = emptyList(), repairReports = emptyList(), pendingChangeRequests = emptyList()) }
+                    // Optionally, you might want to fetch announcements and repair reports that are not landlord-specific if any.
+                    // For now, assuming if landlordCode is null, we stop further landlord-specific loading.
+                     combine(
+                        announcementDao.getAll(), // Assuming these are general, not landlord-specific
+                        repairReportDao.getAll()  // Assuming these are general, not landlord-specific
+                    ) { announcements, reports ->
+                        _uiState.update {
+                            it.copy(
+                                landlord = collectedLandlord,
+                                announcements = announcements,
+                                repairReports = reports,
+                                pendingChangeRequests = emptyList(), // No requests if no landlord code
+                                isLoading = false
+                            )
+                        }
+                    }.catch { e -> 
+                        // Handle exceptions from combine or its inner flows
+                         _uiState.update { it.copy(isLoading = false, landlord = collectedLandlord) } 
+                    }.collect()
+                    return@collectLatest
+                }
+
+                // Landlord and landlordCode are valid, proceed to combine all data streams
+                combine(
+                    announcementDao.getAll(),
+                    repairReportDao.getAll(),
+                    requestRepository.getRequestsByLandlord(collectedLandlord.landlordCode) // Safe to use landlordCode here
+                ) { announcements, reports, requests ->
+                    LandlordUiState(
+                        landlord = collectedLandlord,
+                        announcements = announcements,
+                        repairReports = reports,
+                        pendingChangeRequests = requests.filter { it.status == "pending" },
+                        isLoading = false
+                    )
+                }.catch { e ->
+                     // Handle exceptions from combine or its inner flows
+                    _uiState.update { it.copy(isLoading = false, landlord = collectedLandlord) } // Update with what we have
+                }.collect { state ->
+                    _uiState.value = state
+                }
             }
         }
     }
-
-    // <-- resetDatabase 函式已完全移除 -->
 }
 
 /**
@@ -72,7 +101,6 @@ class LandlordViewModelFactory(
     private val landlordId: String,
     private val db: AppDatabase,
     private val requestRepository: RoomChangeRequestRepository
-    // private val adminRepository: AdminRepository // <-- 已移除
 ) : ViewModelProvider.Factory {
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         if (modelClass.isAssignableFrom(LandlordViewModel::class.java)) {
@@ -83,7 +111,6 @@ class LandlordViewModelFactory(
                 db.announcementDao(),
                 db.repairReportDao(),
                 requestRepository
-                // adminRepository // <-- 已移除
             ) as T
         }
         throw IllegalArgumentException("Unknown ViewModel class")

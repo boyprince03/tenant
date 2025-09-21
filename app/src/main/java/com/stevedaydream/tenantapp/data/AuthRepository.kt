@@ -33,7 +33,7 @@ class AuthRepository(private val userDao: UserDao) {
         val userDoc = usersCollection.document(uid).get().await()
         val user = userDoc.toObject(User::class.java)
             ?: throw Exception("在 Firestore 中找不到對應的使用者資料。")
-        userDao.insert(user)
+        userDao.insert(user) // Write to local Room
         return user
     }
 
@@ -48,7 +48,10 @@ class AuthRepository(private val userDao: UserDao) {
         val authResult = auth.createUserWithEmailAndPassword(email, password).await()
         val uid = authResult.user?.uid ?: throw Exception("註冊失敗，無法取得 UID。")
         val newUser = user.copy(id = uid)
+        // 1. Write to Firestore
         usersCollection.document(uid).set(newUser).await()
+        // 2. Write to local Room database
+        userDao.insert(newUser) 
         return newUser
     }
 

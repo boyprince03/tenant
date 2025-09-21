@@ -55,7 +55,7 @@ class TenantPaymentViewModel(
             currentMonth = SimpleDateFormat("yyyy-MM", Locale.getDefault()).format(Date())
         )
     )
-    val uiState: StateFlow<PaymentUiState> = _uiState
+    val uiState: StateFlow<PaymentUiState> = _uiState.asStateFlow() // Expose asStateFlow() for read-only
 
     init {
         loadPaymentDetails()
@@ -63,52 +63,59 @@ class TenantPaymentViewModel(
 
     private fun loadPaymentDetails() {
         viewModelScope.launch {
-            val user = userDao.getUserById(userId)
-            if (user?.boundRoomNumber == null) {
-                _uiState.update { it.copy(errorMessage = "您尚未綁定任何房間", isLoading = false) }
-                return@launch
-            }
-
-            val roomNumber = user.boundRoomNumber!!
-            val currentMonth = _uiState.value.currentMonth
-
-            // --- 【*** 核心修改：改用更有效率的查詢 ***】 ---
-            // 直接在 IO 執行緒中進行所有資料庫操作
-            withContext(Dispatchers.IO) {
-                val room = roomDao.getRoomByNumber(roomNumber)
-
-                if (room == null) {
-                    _uiState.update { it.copy(errorMessage = "找不到對應的房間資料", isLoading = false) }
-                    return@withContext
+            _uiState.update { it.copy(isLoading = true, errorMessage = null) }
+            userDao.getUserById(userId).collectLatest { user -> // Collect the Flow<User?>
+                if (user == null || user.boundRoomNumber == null) {
+                    _uiState.update { it.copy(errorMessage = "您尚未綁定任何房間或找不到使用者", isLoading = false) }
+                    return@collectLatest // Stop further processing if no user or no bound room
                 }
 
-                // 取得電費紀錄
-                val currentRecord = electricMeterRepository.getRecord(roomNumber, currentMonth) // 使用 Repository
-                val previousRecord = electricMeterRepository.getPreviousRecord(roomNumber, currentMonth) // 使用 Repository
+                val roomNumber = user.boundRoomNumber!! // Safe to use !! because we checked above
+                val currentMonth = _uiState.value.currentMonth
 
-                var usage: Int? = null
-                var fee: Int? = null
-                if (currentRecord != null && previousRecord != null) {
-                    usage = currentRecord.meterValue - previousRecord.meterValue
-                    if (usage >= 0) {
-                        fee = usage * 5 // 每度電 5 元
+                // --- 【*** 核心修改：改用更有效率的查詢 ***】 ---
+                // 直接在 IO 執行緒中進行所有資料庫操作
+                withContext(Dispatchers.IO) {
+                    val room = roomDao.getRoomByNumber(roomNumber)
+
+                    if (room == null) {
+                        _uiState.update { it.copy(errorMessage = "找不到對應的房間資料 (房號: $roomNumber)", isLoading = false) }
+                        return@withContext
                     }
-                }
 
-                val totalAmount = room.rentAmount + (fee ?: 0)
+                    // 取得電費紀錄
+                    // Assuming getRecord and getPreviousRecord are suspend functions or return Flow
+                    // If they return Flow, you'd collect them here or combine them.
+                    // For simplicity, assuming they are suspend functions for now based on previous patterns.
+                    val currentRecord = electricMeterRepository.getRecord(roomNumber, currentMonth)
+                    val previousRecord = electricMeterRepository.getPreviousRecord(roomNumber, currentMonth)
 
-                // 取得繳費狀態
-                paymentRepository.getPaymentRecord(roomNumber, currentMonth).collect { payment -> // 使用 Repository
-                    _uiState.update {
-                        it.copy(
-                            roomNumber = roomNumber,
-                            rentAmount = room.rentAmount,
-                            electricityUsage = usage,
-                            electricityFee = fee,
-                            totalAmount = totalAmount,
-                            paymentStatus = if (payment?.isPaid == true) "已繳費" else "未繳費",
-                            isLoading = false
-                        )
+                    var usage: Int? = null
+                    var fee: Int? = null
+                    if (currentRecord != null && previousRecord != null) {
+                        usage = currentRecord.meterValue - previousRecord.meterValue
+                        if (usage >= 0) {
+                            fee = usage * 5 // 每度電 5 元
+                        }
+                    }
+
+                    val totalAmount = room.rentAmount + (fee ?: 0)
+
+                    // 取得繳費狀態
+                    // Ensure paymentRepository.getPaymentRecord returns a Flow and collect it
+                    paymentRepository.getPaymentRecord(roomNumber, currentMonth).collectLatest { payment ->
+                        _uiState.update {
+                            it.copy(
+                                roomNumber = roomNumber,
+                                rentAmount = room.rentAmount,
+                                electricityUsage = usage,
+                                electricityFee = fee,
+                                totalAmount = totalAmount,
+                                paymentStatus = if (payment?.isPaid == true) "已繳費" else "未繳費",
+                                isLoading = false,
+                                errorMessage = null // Clear any previous error
+                            )
+                        }
                     }
                 }
             }

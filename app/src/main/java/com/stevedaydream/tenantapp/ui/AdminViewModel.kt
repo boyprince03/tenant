@@ -40,32 +40,37 @@ class AdminViewModel(private val adminRepository: AdminRepository) : ViewModel()
         loadAllData()
     }
 
-    fun loadAllData() {
+    private fun loadAllData() {
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true) }
-            val users = adminRepository.getAllUsers(5)
-            val rooms = adminRepository.getAllRooms(5)
-            val reports = adminRepository.getAllRepairReports(5)
-            val announcements = adminRepository.getAllAnnouncements(5)
-            val requests = adminRepository.getAllRoomChangeRequests(5)
-            val payments = adminRepository.getAllPayments(5)
-            val records = adminRepository.getAllElectricMeterRecords(5)
-            val landlords = adminRepository.getAllLandlords()
-            val unassignedRooms = adminRepository.getUnassignedRooms()
+            try {
+                val users = adminRepository.getAllUsers(5)
+                val rooms = adminRepository.getAllRooms(5)
+                val reports = adminRepository.getAllRepairReports(5)
+                val announcements = adminRepository.getAllAnnouncements(5)
+                val requests = adminRepository.getAllRoomChangeRequests(5)
+                val payments = adminRepository.getAllPayments(5)
+                val records = adminRepository.getAllElectricMeterRecords(5)
+                val landlords = adminRepository.getAllLandlords()
+                val unassignedRooms = adminRepository.getUnassignedRooms()
 
-            _uiState.update {
-                it.copy(
-                    users = users,
-                    rooms = rooms,
-                    repairReports = reports,
-                    announcements = announcements,
-                    roomChangeRequests = requests,
-                    payments = payments,
-                    electricMeterRecords = records,
-                    landlords = landlords,
-                    unassignedRooms = unassignedRooms,
-                    isLoading = false
-                )
+                _uiState.update {
+                    it.copy(
+                        users = users,
+                        rooms = rooms,
+                        repairReports = reports,
+                        announcements = announcements,
+                        roomChangeRequests = requests,
+                        payments = payments,
+                        electricMeterRecords = records,
+                        landlords = landlords,
+                        unassignedRooms = unassignedRooms,
+                        isLoading = false
+                    )
+                }
+            } catch (e: Exception) {
+                _uiState.update { it.copy(isLoading = false) }
+                // Handle error appropriately, e.g., show a message
             }
         }
     }
@@ -127,15 +132,14 @@ class AdminViewModel(private val adminRepository: AdminRepository) : ViewModel()
 
     /**
      * 重置整個 Firestore 資料庫 (僅供開發使用)
-     * @param onResult 操作完成後的回呼，傳回操作是否成功。
+     * @param onResult 操作完成後的回呼，傳回操作是否成功以及結果訊息。
      */
-    fun resetDatabase(onResult: (Boolean) -> Unit) {
+    fun resetDatabase(onResult: (Boolean, String) -> Unit) {
         viewModelScope.launch {
             _uiState.update { it.copy(isResetting = true) }
-            val success = adminRepository.resetEntireDatabase()
-            // 無論成功或失敗，都結束重置狀態
+            val (success, message) = adminRepository.resetEntireDatabase()
             _uiState.update { it.copy(isResetting = false) }
-            onResult(success)
+            onResult(success, message)
         }
     }
 }
@@ -149,4 +153,3 @@ class AdminViewModelFactory(private val adminRepository: AdminRepository) : View
         throw IllegalArgumentException("Unknown ViewModel class")
     }
 }
-

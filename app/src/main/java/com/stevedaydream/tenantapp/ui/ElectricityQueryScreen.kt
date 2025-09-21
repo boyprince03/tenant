@@ -1,31 +1,48 @@
 package com.stevedaydream.tenantapp.ui
 
+import android.widget.Toast
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import com.stevedaydream.tenantapp.data.AppDatabase
+import com.stevedaydream.tenantapp.data.ElectricMeterRepository
+import kotlinx.coroutines.flow.collectLatest
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun ElectricityQueryScreen(
-    userId: String, // 【***修正***】
+    userId: String,
     db: AppDatabase,
-    navController: NavHostController
+    navController: NavHostController,
+    // 【*** 核心修改 1：接收 Repository ***】
+    electricMeterRepository: ElectricMeterRepository
 ) {
     val viewModel: ElectricityQueryViewModel = viewModel(
-        factory = ElectricityQueryViewModelFactory(userId, db)
+        // 【*** 核心修改 2：將 Repository 傳給 Factory ***】
+        factory = ElectricityQueryViewModelFactory(userId, db, electricMeterRepository)
     )
     val uiState by viewModel.uiState.collectAsState()
+    val context = LocalContext.current
+
+    // 【*** 核心修改 3：監聽 Toast 訊息 ***】
+    LaunchedEffect(Unit) {
+        viewModel.toastMessage.collectLatest { message ->
+            Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+        }
+    }
+
 
     Scaffold(
         topBar = {
@@ -34,6 +51,19 @@ fun ElectricityQueryScreen(
                 navigationIcon = {
                     IconButton(onClick = { navController.popBackStack() }) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "返回")
+                    }
+                },
+                // 【*** 核心修改 4：新增同步按鈕 ***】
+                actions = {
+                    IconButton(
+                        onClick = { viewModel.onSyncDataClicked() },
+                        enabled = !uiState.isSyncing // 同步中則禁用按鈕
+                    ) {
+                        if (uiState.isSyncing) {
+                            CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                        } else {
+                            Icon(Icons.Default.Sync, contentDescription = "從雲端同步資料")
+                        }
                     }
                 }
             )

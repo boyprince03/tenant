@@ -11,5 +11,6 @@ data class RepairReport(
     val issue: String = "",
     val description: String = "",
     val date: Long = System.currentTimeMillis(),
-    val status: String = "待處理"
+    val status: String = "待處理",
+    val userId: String = "" // Added userId field
 )

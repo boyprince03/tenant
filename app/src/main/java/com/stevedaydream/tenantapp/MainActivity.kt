@@ -5,8 +5,8 @@ import android.os.Bundle
 import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.lifecycle.lifecycleScope
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.rememberNavController
 import com.google.firebase.auth.FirebaseAuth
@@ -29,14 +29,24 @@ class MainActivity : ComponentActivity() {
         val roomDao = db.roomDao()
         val announcementDao = db.announcementDao()
         val repairReportDao = db.repairReportDao()
+        val meterDao = db.electricMeterDao()
+        val paymentDao = db.paymentDao()
+        val userDao = db.userDao()
+        val requestDao = db.roomChangeRequestDao()
 
+
+        // --- 【*** 核心修正 1：建立 Repository 時傳入正確的 lifecycleScope ***】 ---
         // Repositories for cloud access
-        val roomRepository = RoomRepository(roomDao)
-        val announcementRepository = AnnouncementRepository(announcementDao)
-        val repairReportRepository = RepairReportRepository(repairReportDao)
+        val roomRepository = RoomRepository(roomDao, lifecycleScope)
+        val announcementRepository = AnnouncementRepository(announcementDao, lifecycleScope)
+        val repairReportRepository = RepairReportRepository(repairReportDao, lifecycleScope) // 傳入 scope
+        val meterRepository = ElectricMeterRepository(meterDao, lifecycleScope)
+        val paymentRepository = PaymentRepository(paymentDao, lifecycleScope)
+        val userRepository = UserRepository(userDao, lifecycleScope)
+        val requestRepository = RoomChangeRequestRepository(requestDao)
+        val adminRepository = AdminRepository(userDao, roomDao, lifecycleScope)
 
-        // 【*** 核心修改 1：為所有預設資料預先產生 ID ***】
-        // RoomEntity 會在建構時自動產生 UUID
+
         val defaultRooms = listOf(
             RoomEntity(roomNumber = "401", status = "可租", type="雅房", rentAmount = 6000, deposit=12000),
             RoomEntity(roomNumber = "402", status = "可租", type="套房", rentAmount = 8500, deposit=17000),
@@ -58,34 +68,25 @@ class MainActivity : ComponentActivity() {
             RepairReport(id = UUID.randomUUID().toString(), tenantName = "李四", roomNumber = "402", issue = "水龍頭漏水", description = "浴室洗手台的水龍頭關不緊，一直在滴水。")
         )
 
-        // 【*** 核心修改 2：修改同步邏輯 ***】
         CoroutineScope(Dispatchers.IO).launch {
             val firestore = FirebaseFirestore.getInstance()
-            // 檢查雲端資料庫是否為空
             val cloudRoomCount = firestore.collection("rooms").limit(1).get().await().size()
 
             if (cloudRoomCount == 0) {
                 Log.d("MainActivity", "Firestore is empty. Seeding both Firestore and local Room DB.")
 
-                // 步驟 1: 使用 Repository 的 update 方法將資料（包含預設ID）推送到 Firestore
-                Log.d("MainActivity", "Uploading to Firestore...")
-                defaultRooms.forEach { roomRepository.updateRoom(it) }
-                defaultAnnouncements.forEach { announcementRepository.update(it) }
-                defaultRepairReports.forEach { repairReportRepository.update(it) }
-                Log.d("MainActivity", "Firestore upload complete.")
-
-                // 步驟 2: 使用 DAO 將相同的資料寫入本地 Room 資料庫
-                Log.d("MainActivity", "Writing to local Room DB...")
-                roomDao.insertRooms(defaultRooms)
-                announcementDao.insertOrUpdateAll(defaultAnnouncements)
-                repairReportDao.insertOrUpdateAll(defaultRepairReports)
-                Log.d("MainActivity", "Local Room DB write complete.")
+                // --- 【*** 核心修正 2：使用 insert 方法來新增初始資料，而非 update ***】 ---
+                // update 會在本地資料庫找不到項目時失敗，insert 才能正確寫入新資料。
+                Log.d("MainActivity", "Uploading to Firestore and local DB...")
+                defaultRooms.forEach { roomRepository.addRoom(it) } // 使用 addRoom
+                defaultAnnouncements.forEach { announcementRepository.insert(it) } // 使用 insert
+                defaultRepairReports.forEach { repairReportRepository.insert(it) } // 使用 insert
+                Log.d("MainActivity", "Seeding complete.")
 
             } else {
                 Log.d("MainActivity", "Firestore already contains data. Skipping test data seeding.")
             }
 
-            // 建立預設管理員帳號的邏輯不變
             createDefaultAdmins()
         }
 
@@ -113,14 +114,11 @@ class MainActivity : ComponentActivity() {
             val username = "admin$adminIndex"
 
             try {
-                // 檢查 Firestore 中是否已存在該使用者
                 val existingUser = usersCollection.whereEqualTo("username", username).get().await()
                 if (existingUser.isEmpty) {
-                    // 1. 在 Firebase Auth 中建立帳號
                     val authResult = auth.createUserWithEmailAndPassword(email, password).await()
                     val uid = authResult.user?.uid ?: continue
 
-                    // 2. 在 Firestore 中建立對應的使用者資料
                     val adminUser = User(
                         id = uid,
                         username = username,
@@ -132,7 +130,6 @@ class MainActivity : ComponentActivity() {
                     Log.d("AdminInit", "管理員 $username 已存在")
                 }
             } catch (e: Exception) {
-                // 如果帳號已在 Auth 中但 Firestore 沒有，可能會拋出例外，這裡忽略
                 Log.e("AdminInit", "建立管理員 $username 失敗: ${e.message}")
             }
         }
@@ -152,7 +149,6 @@ class MainActivity : ComponentActivity() {
             val landlordId = intent.getStringExtra("landlordId")
             if (!landlordId.isNullOrBlank()) {
                 navController.navigate("room_change_approval/$landlordId")
-                // 清除 intent extra，避免重複導航
                 intent.removeExtra("navigateTo")
                 intent.removeExtra("landlordId")
             }

@@ -3,13 +3,22 @@ package com.stevedaydream.tenantapp.data
 import android.util.Log
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
+import com.google.firebase.firestore.ktx.toObject
+import com.google.firebase.firestore.ktx.toObjects
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.withContext
 
 /**
  * 用於執行管理員等級操作的 Repository。
- * 警告：這裡的方法可能具有破壞性，僅供開發和測試使用。
  */
-class AdminRepository {
+class AdminRepository(
+    private val userDao: UserDao,
+    private val roomDao: RoomDao,
+    private val coroutineScope: CoroutineScope
+) {
 
     private val firestore = FirebaseFirestore.getInstance()
 
@@ -105,10 +114,6 @@ class AdminRepository {
         }
     }
 
-    /**
-     * 【*** 新增 ***】
-     * 取得所有角色為房東的使用者。
-     */
     suspend fun getAllLandlords(): List<User> {
         return try {
             firestore.collection("users")
@@ -120,10 +125,6 @@ class AdminRepository {
         }
     }
 
-    /**
-     * 【*** 新增 ***】
-     * 取得所有尚未指派給任何房東的房間。
-     */
     suspend fun getUnassignedRooms(): List<RoomEntity> {
         return try {
             firestore.collection("rooms")
@@ -135,82 +136,86 @@ class AdminRepository {
         }
     }
 
-    /**
-     * 【*** 新增 ***】
-     * 使用批次寫入將多個房間指派給一位房東。
-     * @param roomIds 要更新的房間 ID 列表。
-     * @param landlordCode 要指派的房東序號。
-     * @return 操作是否成功。
-     */
     suspend fun assignRoomsToLandlord(roomIds: List<String>, landlordCode: String): Boolean {
         return try {
             val batch = firestore.batch()
-            roomIds.forEach { roomId ->
-                val docRef = firestore.collection("rooms").document(roomId)
-                batch.update(docRef, "landlordCode", landlordCode)
+            val updatedRooms = mutableListOf<RoomEntity>()
+
+            // First, fetch the rooms to be updated
+            for (roomId in roomIds) {
+                val roomDoc = firestore.collection("rooms").document(roomId).get().await()
+                val room = roomDoc.toObject(RoomEntity::class.java)
+                if(room != null) {
+                    updatedRooms.add(room.copy(landlordCode = landlordCode))
+                }
             }
+
+            // Now, update them in a batch
+            for (room in updatedRooms) {
+                val docRef = firestore.collection("rooms").document(room.id)
+                batch.set(docRef, room) // Use set to overwrite the whole object
+            }
+
             batch.commit().await()
+
+            // After successful Firestore update, update local cache
+            withContext(Dispatchers.IO) {
+                roomDao.insertRooms(updatedRooms) // Assumes OnConflictStrategy.REPLACE
+            }
+
             true
         } catch (e: Exception) {
-            Log.e("AdminRepository", "Error assigning rooms", e)
+            Log.e("AdminRepository", "Error assigning rooms to landlord $landlordCode", e)
             false
         }
     }
 
+
+    suspend fun updateUser(user: User) {
+        if (user.id.isBlank()) throw IllegalArgumentException("User ID cannot be blank for an update.")
+        // 1. Update Firestore
+        firestore.collection("users").document(user.id).set(user).await()
+        // 2. Update local Room database
+        withContext(Dispatchers.IO) {
+            userDao.insert(user) // Assumes OnConflictStrategy.REPLACE
+        }
+    }
+
+    suspend fun deleteUser(user: User) {
+        if (user.id.isBlank()) throw IllegalArgumentException("User ID cannot be blank for deletion.")
+        // 1. Delete from Firestore
+        firestore.collection("users").document(user.id).delete().await()
+        // 2. Delete from local Room database
+        withContext(Dispatchers.IO) {
+            userDao.delete(user)
+        }
+    }
 
     /**
      * 【警告】刪除 Firestore 資料庫中的所有資料！
-     * 這個函數會迭代所有已知的集合並刪除其中的所有文件。
-     * 這是一個緩慢且昂貴的操作，切勿在正式環境的客戶端上公開。
-     *
-     * @return 操作是否成功。
+     * @return Pair<Boolean, String> - first is success, second is message
      */
-    suspend fun resetEntireDatabase(): Boolean {
-        // 列出您專案中所有的集合名稱
+    suspend fun resetEntireDatabase(): Pair<Boolean, String> {
         val collectionNames = listOf(
-            "users",
-            "rooms",
-            "room_change_requests",
-            "notes", // 假設還有 notes 集合
-            "repair_reports",
-            "announcements"
-            // ... 將您所有的集合名稱加到這裡
+            "users", "rooms", "room_change_requests",
+            "repair_reports", "announcements", "electric_meter_records", "payments"
         )
-
         return try {
             for (collectionName in collectionNames) {
-                Log.d("AdminRepository", "正在刪除集合: $collectionName...")
-                val collection = firestore.collection(collectionName)
-                val snapshot = collection.get().await()
-                for (document in snapshot.documents) {
-                    collection.document(document.id).delete().await()
+                var query = firestore.collection(collectionName).limit(100)
+                var snapshot = query.get().await()
+                while(snapshot.size() > 0){
+                    val batch = firestore.batch()
+                    snapshot.documents.forEach { batch.delete(it.reference) }
+                    batch.commit().await()
+                    snapshot = query.get().await()
                 }
-                Log.d("AdminRepository", "集合 $collectionName 已清空。")
+                Log.d("AdminRepository", "Collection $collectionName cleared.")
             }
-            true
+            Pair(true, "Firestore 資料庫已成功重置！")
         } catch (e: Exception) {
-            Log.e("AdminRepository", "重置資料庫失敗", e)
-            false
+            Log.e("AdminRepository", "Failed to reset database", e)
+            Pair(false, "重置失敗: ${e.message}")
         }
-    }
-
-    /**
-     * 【新增】更新 Firestore 中的使用者資料。
-     * @param user 包含更新後資料的 User 物件。
-     */
-    suspend fun updateUser(user: User) {
-        if (user.id.isBlank()) throw IllegalArgumentException("User ID cannot be blank for an update.")
-        firestore.collection("users").document(user.id).set(user).await()
-    }
-
-    /**
-     * 【新增】【警告】從 Firestore 中刪除使用者文件。
-     * 注意：此操作 **不會** 從 Firebase Authentication 中刪除使用者的登入憑證。
-     * 刪除 Auth 使用者需要 Admin SDK，通常在後端執行。
-     * @param user 要刪除的 User 物件。
-     */
-    suspend fun deleteUser(user: User) {
-        if (user.id.isBlank()) throw IllegalArgumentException("User ID cannot be blank for deletion.")
-        firestore.collection("users").document(user.id).delete().await()
     }
 }

@@ -42,4 +42,9 @@ interface RoomDao {
     @Query("DELETE FROM rooms WHERE landlordCode = :landlordCode")
     suspend fun deleteRoomsByLandlordCode(landlordCode: String)
 
+    @Transaction
+    suspend fun replaceRoomsForLandlord(landlordCode: String, rooms: List<RoomEntity>) {
+        deleteRoomsByLandlordCode(landlordCode)
+        insertRooms(rooms)
+    }
 }

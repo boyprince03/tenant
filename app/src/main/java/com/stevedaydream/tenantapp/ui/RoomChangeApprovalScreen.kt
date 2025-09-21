@@ -8,7 +8,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack // Added for AutoMirrored
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -19,6 +19,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import com.stevedaydream.tenantapp.data.*
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
@@ -27,27 +29,31 @@ import java.util.*
 @Composable
 fun RoomChangeApprovalScreen(
     landlordId: String,
-    db: AppDatabase,
+    db: AppDatabase, // For direct DAO access where appropriate
     navController: NavHostController,
-    // 【*** 核心修改 1：接收所有需要的 Repository ***】
     userRepository: UserRepository,
     roomRepository: RoomRepository,
     requestRepository: RoomChangeRequestRepository
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val userDao = db.userDao() // 仍然可以用來讀取本地快取的使用者資料
+    val userDao = db.userDao() // For landlord Flow
+    val roomDao = db.roomDao() // For room fetching
 
     var landlord by remember { mutableStateOf<User?>(null) }
-    // 【*** 核心修改 2：從 Repository 監聽資料 ***】
+
     val requests by remember(landlord) {
-        landlord?.landlordCode?.let { requestRepository.getRequestsByLandlord(it) } ?: kotlinx.coroutines.flow.flowOf(emptyList())
+        landlord?.landlordCode?.let { requestRepository.getRequestsByLandlord(it) } 
+            ?: kotlinx.coroutines.flow.flowOf(emptyList())
     }.collectAsState(initial = emptyList())
 
     var selectedRequest by remember { mutableStateOf<RoomChangeRequest?>(null) }
 
     LaunchedEffect(landlordId) {
-        landlord = userDao.getUserById(landlordId)
+        // Correctly collect the Flow<User?>
+        userDao.getUserById(landlordId).collectLatest {
+            landlord = it
+        }
     }
 
     if (selectedRequest != null) {
@@ -58,30 +64,29 @@ fun RoomChangeApprovalScreen(
                 scope.launch {
                     val newStatus = if (isApproved) "approved" else "rejected"
                     val updatedRequest = req.copy(status = newStatus)
-
-                    // 【*** 核心修改 3：使用 Repository 更新請求狀態 ***】
                     requestRepository.update(updatedRequest)
 
                     if (isApproved) {
-                        // 1. 找到房客 User (使用 userRepository)
-                        val tenant = userRepository.getUser(req.tenantId)
-                        // 2. 找到舊房間和新房間 (用本地 dao 讀取是可以的)
-                        val oldRoom = db.roomDao().getRoomByNumber(req.currentRoomNumber)
-                        val newRoom = db.roomDao().getRoomByNumber(req.requestedRoomNumber)
+                        // 1. Fetch tenant using UserRepository (suspend call from Flow)
+                        val tenant = userRepository.getUser(req.tenantId).firstOrNull()
+                        // 2. Fetch rooms using local DAO (suspend calls)
+                        val oldRoom = roomDao.getRoomByNumber(req.currentRoomNumber)
+                        val newRoom = roomDao.getRoomByNumber(req.requestedRoomNumber)
 
                         if (tenant != null && oldRoom != null && newRoom != null) {
-                            // 3. 更新房客綁定的房間 (使用 userRepository)
-                            userRepository.updateUser(tenant.copy(boundRoomNumber = req.requestedRoomNumber))
+                            // 3. Update tenant's boundRoomNumber using UserRepository
+                            val updatedTenant = tenant.copy(boundRoomNumber = req.requestedRoomNumber)
+                            userRepository.saveUser(updatedTenant) // Use saveUser from UserRepository
 
-                            // 4. 更新舊房間狀態為「可租」 (使用 roomRepository)
+                            // 4. Update old room's status using RoomRepository
                             roomRepository.updateRoom(oldRoom.copy(tenantId = null, tenantName = "", status = "可租"))
 
-                            // 5. 更新新房間狀態為「出租中」並綁定租客 (使用 roomRepository)
+                            // 5. Update new room's status and bind tenant using RoomRepository
                             roomRepository.updateRoom(newRoom.copy(tenantId = tenant.id, tenantName = tenant.username, status = "出租中"))
 
                             Toast.makeText(context, "已同意並更新雲端與本地資料", Toast.LENGTH_SHORT).show()
                         } else {
-                            Toast.makeText(context, "更新失敗：找不到相關資料", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, "更新失敗：找不到相關資料 (房客: ${tenant?.id}, 舊房: ${oldRoom?.roomNumber}, 新房: ${newRoom?.roomNumber})", Toast.LENGTH_LONG).show()
                         }
                     } else {
                         Toast.makeText(context, "已拒絕該請求", Toast.LENGTH_SHORT).show()
@@ -98,7 +103,7 @@ fun RoomChangeApprovalScreen(
                 title = { Text("審核房間更換請求") },
                 navigationIcon = {
                     IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "返回")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回") // Updated Icon
                     }
                 }
             )

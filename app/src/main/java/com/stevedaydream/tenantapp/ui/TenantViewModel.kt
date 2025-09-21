@@ -1,3 +1,4 @@
+@file:OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 package com.stevedaydream.tenantapp.ui
 
 import androidx.lifecycle.ViewModel
@@ -5,6 +6,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.stevedaydream.tenantapp.data.*
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -46,48 +48,72 @@ class TenantViewModel(
 
     private fun loadInitialData() {
         viewModelScope.launch {
-            // 監聽使用者資料的變化
-            val userFlow = flow { emit(userDao.getUserById(userId)) }
+            _uiState.update { it.copy(isLoading = true, error = null) }
 
-            // 監聽最新的換房請求
+            val userFlow = userDao.getUserById(userId)
             val requestFlow = requestRepository.getLatestRequestByTenantId(userId)
 
-            // 將使用者和請求的 Flow 結合起來
-            combine(userFlow, requestFlow) { user, request ->
+            userFlow.collectLatest { user ->
                 if (user == null) {
                     _uiState.update { it.copy(isLoading = false, error = "找不到使用者資料") }
-                    return@combine
+                    return@collectLatest
                 }
 
-                // 根據使用者資料，進一步取得房東、房間和繳費資訊
-                val landlord = user.boundLandlordCode?.let { userDao.getLandlordByCode(it) }
-                val room = user.boundRoomNumber?.let { roomDao.getRoomByNumber(it) }
+                // Flows dependent on the user
+                val landlordFlow: Flow<User?> = user.boundLandlordCode?.let {
+                    userDao.getLandlordByCode(it)
+                } ?: flowOf(null)
+
+                // 【*** 错误修复 ***】
+                // 将 suspend fun 的结果包装成一个 Flow
+                val roomFlow: Flow<RoomEntity?> = user.boundRoomNumber?.let { roomNumber ->
+                    flow { emit(roomDao.getRoomByNumber(roomNumber)) }
+                } ?: flowOf(null)
+
+
+                val announcementFlow: Flow<List<Announcement>> = user.boundLandlordCode?.let {
+                    announcementDao.getGlobalAndByLandlordCode(it)
+                } ?: announcementDao.getGlobalAndByLandlordCode("") // Fallback for global if no landlord code
 
                 val currentMonth = SimpleDateFormat("yyyy-MM", Locale.getDefault()).format(Date())
-                val payment = room?.roomNumber?.let { paymentDao.getPaymentRecord(it, currentMonth).firstOrNull() }
-                val paymentStatus = if (payment?.isPaid == true) "已繳清" else "未繳費"
 
-                // 根據房東 code 取得公告的 Flow
-                val announcementFlow = user.boundLandlordCode?.let {
-                    announcementDao.getGlobalAndByLandlordCode(it)
-                } ?: announcementDao.getGlobalAndByLandlordCode("")
-
-                // 監聽公告的變化並更新最終狀態
-                announcementFlow.collect { announcements ->
-                    _uiState.update {
-                        it.copy(
-                            currentUser = user,
-                            landlord = landlord,
-                            roomDetails = room,
-                            latestRequest = request,
-                            paymentStatus = paymentStatus,
-                            announcements = announcements,
-                            isLoading = false,
-                            error = null // 成功載入後清除錯誤
-                        )
+                val paymentFlow: Flow<Payment?> = roomFlow.flatMapLatest { room ->
+                    if (room?.roomNumber != null) {
+                        paymentDao.getPaymentRecord(room.roomNumber, currentMonth)
+                    } else {
+                        flowOf(null)
                     }
                 }
-            }.flowOn(Dispatchers.IO).launchIn(viewModelScope) // 在 IO 執行緒執行資料庫操作
+
+                // Combine all dependent flows
+                combine(
+                    requestFlow, // Flow<RoomChangeRequest?>
+                    landlordFlow, // Flow<User?>
+                    roomFlow,     // Flow<RoomEntity?>
+                    paymentFlow,  // Flow<Payment?>
+                    announcementFlow // Flow<List<Announcement>>
+                ) { latestRequest, landlord, roomDetails, payment, announcements ->
+
+                    val paymentStatusText = if (payment?.isPaid == true) "已繳清" else "未繳費"
+
+                    TenantUiState(
+                        currentUser = user, // The user from the outer collectLatest
+                        landlord = landlord,
+                        roomDetails = roomDetails,
+                        announcements = announcements,
+                        latestRequest = latestRequest,
+                        paymentStatus = paymentStatusText,
+                        isLoading = false,
+                        error = null
+                    )
+                }.flowOn(Dispatchers.IO) // Perform combine and DAO operations on IO thread
+                    .catch { e ->
+                        _uiState.update { it.copy(isLoading = false, error = "載入資料時發生錯誤: ${e.message}") }
+                    }
+                    .collect { combinedState ->
+                        _uiState.value = combinedState
+                    }
+            }
         }
     }
 }

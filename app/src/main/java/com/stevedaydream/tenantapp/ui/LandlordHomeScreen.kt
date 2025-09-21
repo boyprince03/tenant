@@ -286,7 +286,10 @@ fun LandlordHomeScreen(
                 }
                 ElevatedButton(
                     modifier = Modifier.fillMaxWidth(),
-                    onClick = { navController.navigate("excel_import") }
+                    onClick = {
+                        // 【*** 核心修正：在導航路徑中加入 landlord.id ***】
+                        navController.navigate("excel_import/${landlord.id}")
+                    }
                 ) {
                     Icon(Icons.Default.NoteAdd, contentDescription = "匯入 Excel 資料", modifier = Modifier.padding(end = 8.dp))
                     Text("匯入 Excel 資料", style = MaterialTheme.typography.bodyLarge)
