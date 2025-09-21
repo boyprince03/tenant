@@ -6,26 +6,26 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 
 @Database(
-    entities = [RepairReport::class,
+    entities = [
+        RepairReport::class,
         RoomEntity::class,
         ElectricMeterRecord::class,
         Announcement::class,
         User::class,
         Payment::class,
-        RoomChangeRequest::class // <-- 新增 Entity
+        RoomChangeRequest::class
     ],
-    version = 21, // <-- 版本升級
+    version = 24, // <-- 版本升級以反映 RoomChangeRequest 的主鍵變更
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
-    // ... (其餘部分保持不變)
     abstract fun repairReportDao(): RepairReportDao
     abstract fun roomDao(): RoomDao
     abstract fun electricMeterDao(): ElectricMeterDao
     abstract fun announcementDao(): AnnouncementDao
     abstract fun userDao(): UserDao
     abstract fun paymentDao(): PaymentDao
-    abstract fun roomChangeRequestDao(): RoomChangeRequestDao // <-- 新增 DAO
+    abstract fun roomChangeRequestDao(): RoomChangeRequestDao
 
 
     companion object {
@@ -35,7 +35,7 @@ abstract class AppDatabase : RoomDatabase() {
                 instance ?: Room.databaseBuilder(
                     context.applicationContext,
                     AppDatabase::class.java,
-                    "repair_report_db"
+                    "tenant_app_db" // <-- 建議給資料庫一個更明確的名稱
                 )
                     .fallbackToDestructiveMigration()
                     .build().also { instance = it }

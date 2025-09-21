@@ -29,7 +29,8 @@ import java.util.*
 @Composable
 fun ElectricityCalcScreen(
     roomDao: RoomDao,
-    meterDao: ElectricMeterDao,
+    // 【*** 修正 1：修改函式簽名，接收 Repository ***】
+    meterRepository: ElectricMeterRepository,
     navController: NavHostController,
     onNavigateToQuery: (Int) -> Unit,
     userRole: String
@@ -38,7 +39,8 @@ fun ElectricityCalcScreen(
     val settingsManager = remember { SettingsManager(context) }
 
     val viewModel: ElectricityCalcViewModel = viewModel(
-        factory = ElectricityCalcViewModelFactory(roomDao, meterDao, userRole, settingsManager)
+        // 【*** 修正 2：在 Factory 中傳入正確的 Repository ***】
+        factory = ElectricityCalcViewModelFactory(roomDao, meterRepository, userRole, settingsManager)
     )
     val uiState by viewModel.uiState.collectAsState()
 
@@ -115,7 +117,8 @@ fun ElectricityCalcScreen(
     }
 }
 
-// 房間度數輸入列表
+// RoomMeterInputList, InfoColumn, CalculationSettingsDialog 保持不變，此處省略
+
 @Composable
 fun RoomMeterInputList(
     uiState: ElectricityCalcViewModel.UiState,
@@ -177,8 +180,6 @@ fun RoomMeterInputList(
         }
     }
 }
-
-// 用於顯示資訊的小元件
 @Composable
 private fun RowScope.InfoColumn(label: String, value: String, unit: String) {
     Column(
@@ -202,8 +203,6 @@ private fun RowScope.InfoColumn(label: String, value: String, unit: String) {
         }
     }
 }
-
-// 設定對話框的 Composable (保持不變)
 @Composable
 fun CalculationSettingsDialog(
     currentSettings: CalculationSettings,

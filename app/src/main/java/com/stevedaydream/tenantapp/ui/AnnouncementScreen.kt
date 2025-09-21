@@ -62,27 +62,26 @@ fun AnnouncementScreen(
     currentUser: User?, // 傳入當前使用者
     landlordCode: String? // 傳入房東 Code
 ) {
-    // 根據使用者角色判斷是否有編輯權限
-    val canEdit = currentUser?.role == "landlord" || currentUser?.role == "admin" // 假設有 admin 角色
+    val canEdit = currentUser?.role == "landlord" || currentUser?.role == "admin"
 
-    // 根據使用者角色和綁定的房東 Code 決定要看哪些公告
-    val announcements by remember(currentUser?.boundLandlordCode) {
-        when {
-            // 房客：看全域公告和自己房東的公告
-            currentUser?.role == "tenant" && currentUser.boundLandlordCode != null ->
-                dao.getGlobalAndByLandlordCode(currentUser.boundLandlordCode!!)
-            // 房東：看全域公告和自己的公告
-            currentUser?.role == "landlord" && currentUser.landlordCode != null ->
-                dao.getGlobalAndByLandlordCode(currentUser.landlordCode)
-            // 預設或訪客：看所有公告
-            else -> dao.getAll()
-        }
+    // 【*** 核心修改：使用 let 語法安全地處理 nullable user ***】
+    val announcements by remember(currentUser) {
+        currentUser?.let { user ->
+            when (user.role) {
+                "tenant" -> user.boundLandlordCode?.let { code ->
+                    dao.getGlobalAndByLandlordCode(code)
+                } ?: dao.getAll() // 如果租客沒有綁定房東，則看全部公告
+                "landlord" -> user.landlordCode?.let { code ->
+                    dao.getGlobalAndByLandlordCode(code)
+                } ?: dao.getAll() // 如果房東沒有 Code，則看全部公告
+                else -> dao.getAll() // 其他角色看全部
+            }
+        } ?: dao.getAll() // 如果 user 是 null (例如訪客)，則看全部公告
     }.collectAsState(initial = emptyList())
 
 
     val scope = rememberCoroutineScope()
     var showEditDialog by remember { mutableStateOf(false) }
-    // --- 【核心】用來顯示詳細內容的 Dialog 狀態 ---
     var showDetailDialog by remember { mutableStateOf<Announcement?>(null) }
     var editing: Announcement? by remember { mutableStateOf(null) }
 
@@ -141,7 +140,6 @@ fun AnnouncementScreen(
                         Card(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                // --- 【核心】點擊卡片，打開詳細內容 Dialog ---
                                 .clickable {
                                     showDetailDialog = ann
                                 },
@@ -178,7 +176,6 @@ fun AnnouncementScreen(
         }
     }
 
-    // --- 【核心】詳細內容 Dialog ---
     if (showDetailDialog != null) {
         AlertDialog(
             onDismissRequest = { showDetailDialog = null },
@@ -204,8 +201,6 @@ fun AnnouncementScreen(
         )
     }
 
-
-    // 編輯/新增 Dialog
     if (showEditDialog) {
         var title by remember { mutableStateOf(editing?.title ?: "") }
         var content by remember { mutableStateOf(editing?.content ?: "") }

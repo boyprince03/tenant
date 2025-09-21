@@ -53,16 +53,29 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import android.widget.Toast
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
+import androidx.compose.material.icons.filled.DeleteForever
 import com.stevedaydream.tenantapp.data.AppDatabase
 import com.stevedaydream.tenantapp.data.User
 import java.text.SimpleDateFormat
 import java.util.*
-import androidx.compose.material.icons.filled.SwapHoriz // 新增 import
+import androidx.compose.material.icons.filled.SwapHoriz
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.runtime.rememberCoroutineScope
+import com.stevedaydream.tenantapp.data.AdminRepository
+import com.stevedaydream.tenantapp.data.RoomChangeRequestRepository
+import kotlinx.coroutines.launch
 
 @Composable
 fun LandlordHomeScreen(
     landlord: User,
+    // 【*** 核心修改 1：接收 Repository ***】
+    requestRepository: RoomChangeRequestRepository,
     onNavigate: (String) -> Unit = {},
     onLogout: () -> Unit
 ) {
@@ -73,8 +86,9 @@ fun LandlordHomeScreen(
     val repairReportDao = db.repairReportDao()
     val announcements by announcementDao.getAll().collectAsState(initial = emptyList())
     val repairReports by repairReportDao.getAll().collectAsState(initial = emptyList())
-    val requestDao = db.roomChangeRequestDao() // 新增 DAO
-    val changeRequests by requestDao.getRequestsByLandlord(landlord.landlordCode ?: "")
+
+    // 【*** 核心修改 2：從 Repository 監聽資料 ***】
+    val changeRequests by requestRepository.getRequestsByLandlord(landlord.landlordCode ?: "")
         .collectAsState(initial = emptyList())
     val pendingRequests = changeRequests.filter { it.status == "pending" }
 
@@ -88,7 +102,60 @@ fun LandlordHomeScreen(
     }
 
     val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.TAIWAN)
+// --- 【核心修改 1：加入重置功能的狀態和邏輯】 ---
+    val scope = rememberCoroutineScope()
+    val adminRepository = remember { AdminRepository() }
+    var showResetConfirmDialog by remember { mutableStateOf(false) }
+    var isResetting by remember { mutableStateOf(false) }
 
+    // 重置確認對話框
+    if (showResetConfirmDialog) {
+        AlertDialog(
+            onDismissRequest = { showResetConfirmDialog = false },
+            title = { Text("確認重置？", fontWeight = FontWeight.Bold) },
+            text = { Text("此操作將會刪除 Firestore 雲端資料庫中的所有資料，且無法復原。確定要繼續嗎？") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showResetConfirmDialog = false
+                        isResetting = true
+                        scope.launch {
+                            val success = adminRepository.resetEntireDatabase()
+                            isResetting = false
+                            if (success) {
+                                Toast.makeText(context, "Firestore 資料庫已重置！請重新啟動 App。", Toast.LENGTH_LONG).show()
+                                // 重置成功後最好直接登出或關閉 App
+                                onLogout()
+                            } else {
+                                Toast.makeText(context, "重置失敗，請檢查 Logcat。", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) { Text("確定刪除") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showResetConfirmDialog = false }) { Text("取消") }
+            }
+        )
+    }
+
+    // 正在重置的遮罩
+    if (isResetting) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.5f))
+                .clickable(enabled = false, onClick = {}),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                CircularProgressIndicator(color = Color.White)
+                Spacer(Modifier.height(16.dp))
+                Text("正在重置資料庫...", color = Color.White, style = MaterialTheme.typography.titleLarge)
+            }
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -106,7 +173,6 @@ fun LandlordHomeScreen(
                             text = { Text("回報紀錄") },
                             onClick = {
                                 expanded = false
-                                // --- 【核心修改：這裡的 onNavigate 會被 Wrapper 攔截並加上 userId】 ---
                                 onNavigate("history")
                             }
                         )
@@ -116,6 +182,16 @@ fun LandlordHomeScreen(
                             onClick = {
                                 expanded = false
                                 onLogout()
+                            }
+                        )
+                        // --- 【核心修改 2：在選單中加入開發者選項】 ---
+                        Divider()
+                        DropdownMenuItem(
+                            text = { Text("重置雲端資料庫 (開發用)", color = MaterialTheme.colorScheme.error) },
+                            leadingIcon = { Icon(Icons.Default.DeleteForever, contentDescription = "重置", tint = MaterialTheme.colorScheme.error)},
+                            onClick = {
+                                expanded = false
+                                showResetConfirmDialog = true // 顯示確認對話框
                             }
                         )
                     }
@@ -165,7 +241,7 @@ fun LandlordHomeScreen(
                     }
                 }
             }
-            // 【新增】房間更換請求通知卡片
+            // 房間更換請求通知卡片
             if (pendingRequests.isNotEmpty()) {
                 Card(
                     modifier = Modifier
@@ -175,7 +251,9 @@ fun LandlordHomeScreen(
                     elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
                 ) {
                     Row(
-                        modifier = Modifier.padding(16.dp).fillMaxWidth(),
+                        modifier = Modifier
+                            .padding(16.dp)
+                            .fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {

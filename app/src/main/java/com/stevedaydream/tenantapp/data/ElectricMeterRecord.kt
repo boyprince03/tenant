@@ -6,7 +6,8 @@ import androidx.room.PrimaryKey
 
 @Entity(tableName = "electric_meter_records")
 data class ElectricMeterRecord(
-    @PrimaryKey(autoGenerate = true) val id: Int = 0,
+    // 【*** 修正：將 id 從 Int 改為 String ***】
+    @PrimaryKey val id: String = "",
     val roomNumber: String,
     val recordMonth: String, // "2025-07"
     val meterValue: Int

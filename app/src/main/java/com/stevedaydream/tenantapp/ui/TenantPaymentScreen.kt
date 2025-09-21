@@ -14,17 +14,22 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
-import com.stevedaydream.tenantapp.data.AppDatabase
+import com.stevedaydream.tenantapp.data.*
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TenantPaymentScreen(
     userId: String,
-    db: AppDatabase,
-    navController: NavHostController
+    navController: NavHostController,
+    // 【*** 修正 1：修改函式簽名，直接接收依賴項 ***】
+    userDao: UserDao,
+    roomDao: RoomDao,
+    electricMeterRepository: ElectricMeterRepository,
+    paymentRepository: PaymentRepository
 ) {
     val viewModel: TenantPaymentViewModel = viewModel(
-        factory = TenantPaymentViewModelFactory(userId, db.userDao(), db.roomDao(), db.electricMeterDao(), db.paymentDao())
+        // 【*** 修正 2：在 Factory 中傳入正確的依賴項 ***】
+        factory = TenantPaymentViewModelFactory(userId, userDao, roomDao, electricMeterRepository, paymentRepository)
     )
     val uiState by viewModel.uiState.collectAsState()
 
@@ -83,6 +88,8 @@ fun TenantPaymentScreen(
         }
     }
 }
+
+// PaymentInfoRow 保持不變，此處省略
 
 @Composable
 fun PaymentInfoRow(label: String, value: String, isTotal: Boolean = false, isStatus: Boolean = false) {

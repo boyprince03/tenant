@@ -18,25 +18,24 @@ class TenantPaymentViewModelFactory(
     private val userId: String,
     private val userDao: UserDao,
     private val roomDao: RoomDao,
-    private val electricMeterDao: ElectricMeterDao,
-    private val paymentDao: PaymentDao
+    private val electricMeterRepository: ElectricMeterRepository, // 改為 Repository
+    private val paymentRepository: PaymentRepository // 改為 Repository
 ) : ViewModelProvider.Factory {
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         if (modelClass.isAssignableFrom(TenantPaymentViewModel::class.java)) {
             @Suppress("UNCHECKED_CAST")
-            return TenantPaymentViewModel(userId, userDao, roomDao, electricMeterDao, paymentDao) as T // 【***修正***】
+            return TenantPaymentViewModel(userId, userDao, roomDao, electricMeterRepository, paymentRepository) as T
         }
         throw IllegalArgumentException("Unknown ViewModel class")
     }
 }
 
-// ViewModel
 class TenantPaymentViewModel(
     private val userId: String,
     private val userDao: UserDao,
     private val roomDao: RoomDao,
-    private val electricMeterDao: ElectricMeterDao,
-    private val paymentDao: PaymentDao
+    private val electricMeterRepository: ElectricMeterRepository, // 改為 Repository
+    private val paymentRepository: PaymentRepository // 改為 Repository
 ) : ViewModel() {
 
     data class PaymentUiState(
@@ -84,8 +83,8 @@ class TenantPaymentViewModel(
                 }
 
                 // 取得電費紀錄
-                val currentRecord = electricMeterDao.getRecord(roomNumber, currentMonth)
-                val previousRecord = electricMeterDao.getPreviousRecord(roomNumber, currentMonth)
+                val currentRecord = electricMeterRepository.getRecord(roomNumber, currentMonth) // 使用 Repository
+                val previousRecord = electricMeterRepository.getPreviousRecord(roomNumber, currentMonth) // 使用 Repository
 
                 var usage: Int? = null
                 var fee: Int? = null
@@ -99,7 +98,7 @@ class TenantPaymentViewModel(
                 val totalAmount = room.rentAmount + (fee ?: 0)
 
                 // 取得繳費狀態
-                paymentDao.getPaymentRecord(roomNumber, currentMonth).collect { payment ->
+                paymentRepository.getPaymentRecord(roomNumber, currentMonth).collect { payment -> // 使用 Repository
                     _uiState.update {
                         it.copy(
                             roomNumber = roomNumber,

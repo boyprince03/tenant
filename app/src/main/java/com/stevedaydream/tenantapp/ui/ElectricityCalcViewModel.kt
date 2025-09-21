@@ -1,5 +1,5 @@
 // tenantapp/ui/ElectricityCalcViewModel.kt
-package com.stevedaydream.tenantapp.ui // 假設的 package 路徑
+package com.stevedaydream.tenantapp.ui
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
@@ -12,28 +12,28 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
-import kotlin.comparisons.minOf // <-- 【*** 核心修改：確認 import 正確 ***】
+import kotlin.math.min
 
 // --- Factory ---
+// 【*** 修正：Factory 的 meterDao 參數改為 meterRepository ***】
 class ElectricityCalcViewModelFactory(
     private val roomDao: RoomDao,
-    private val meterDao: ElectricMeterDao,
+    private val meterRepository: ElectricMeterRepository, // 改為 Repository
     private val userRole: String,
     private val settingsManager: SettingsManager
 ) : ViewModelProvider.Factory {
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         if (modelClass.isAssignableFrom(ElectricityCalcViewModel::class.java)) {
             @Suppress("UNCHECKED_CAST")
-            return ElectricityCalcViewModel(roomDao, meterDao, userRole, settingsManager) as T
+            return ElectricityCalcViewModel(roomDao, meterRepository, userRole, settingsManager) as T
         }
         throw IllegalArgumentException("Unknown ViewModel class")
     }
 }
 
-// --- ViewModel ---
 class ElectricityCalcViewModel(
     private val roomDao: RoomDao,
-    private val meterDao: ElectricMeterDao,
+    private val meterRepository: ElectricMeterRepository, // 改為 Repository
     private val userRole: String,
     private val settingsManager: SettingsManager
 ) : ViewModel() {
@@ -78,7 +78,10 @@ class ElectricityCalcViewModel(
         viewModelScope.launch {
             val rooms = _uiState.value.roomList
             val settings = _uiState.value.settings ?: return@launch
-            val recordsForMonth = rooms.mapNotNull { room -> meterDao.getRecord(room.roomNumber, month) }
+            // 【*** 修正：使用 meterRepository 並正確處理 suspend ***】
+            val recordsForMonth = rooms.map { room ->
+                meterRepository.getRecord(room.roomNumber, month)
+            }.filterNotNull()
 
             val meterMapForLoadedMonth = rooms.associate { room ->
                 val record = recordsForMonth.find { it.roomNumber == room.roomNumber }
@@ -91,8 +94,9 @@ class ElectricityCalcViewModel(
             val used = mutableMapOf<String, Int>()
             val fees = mutableMapOf<String, Float>()
             for (room in rooms) {
-                val currentRecord = meterDao.getRecord(room.roomNumber, month) // 重新獲取以確保最新
-                val previousRecord = meterDao.getPreviousRecord(room.roomNumber, month)
+                // 【*** 修正：使用已載入的資料，並從 meterRepository 獲取上期資料 ***】
+                val currentRecord = recordsForMonth.find { it.roomNumber == room.roomNumber }
+                val previousRecord = meterRepository.getPreviousRecord(room.roomNumber, month)
 
                 if (currentRecord != null && previousRecord != null) {
                     val usedVal = currentRecord.meterValue - previousRecord.meterValue
@@ -238,7 +242,8 @@ class ElectricityCalcViewModel(
                     if (!meterValueStr.isNullOrBlank()) {
                         val v = meterValueStr.toIntOrNull()
                         if (v != null) {
-                            val previousRecord = meterDao.getPreviousRecord(room.roomNumber, currentMonth)
+                            // 【*** 修正：使用 meterRepository ***】
+                            val previousRecord = meterRepository.getPreviousRecord(room.roomNumber, currentMonth)
                             if (previousRecord != null && v < previousRecord.meterValue) {
                                 hasInvalidInput = true
                                 _uiState.update { it.copy(message = "${room.roomNumber}房度數不可小於上期", messageType = MessageType.Error) }
@@ -247,6 +252,8 @@ class ElectricityCalcViewModel(
 
                             recordsToSave.add(
                                 ElectricMeterRecord(
+                                    // id 會由 repository 決定，這裡留空
+                                    id = "",
                                     roomNumber = room.roomNumber,
                                     recordMonth = currentMonth,
                                     meterValue = v
@@ -265,10 +272,11 @@ class ElectricityCalcViewModel(
             }
 
             if (recordsToSave.isNotEmpty()) {
-                meterDao.insertOrUpdateRecords(recordsToSave)
+                // 【*** 修正：使用 meterRepository ***】
+                meterRepository.insertOrUpdateRecords(recordsToSave)
                 _uiState.update {
                     it.copy(
-                        message = "成功儲存 ${recordsToSave.size} 筆",
+                        message = "成功儲存 ${recordsToSave.size} 筆到雲端",
                         messageType = MessageType.Success
                     )
                 }
@@ -303,8 +311,8 @@ class ElectricityCalcViewModel(
 
         for ((sharedRange, rate) in sharedTiers) {
             if (remainingUsage > 0) {
-                // 【*** 核心修改：將 minOF 改為 minOf ***】
-                val usageInTier = minOf(remainingUsage, sharedRange)
+                // 【*** 修正：將 minOF 改為 kotlin.math.min ***】
+                val usageInTier = min(remainingUsage, sharedRange)
                 tieredFee += usageInTier * rate
                 remainingUsage -= usageInTier
             } else {
@@ -317,6 +325,7 @@ class ElectricityCalcViewModel(
         val finalFee: Double
         val calculationMethod: String
 
+        // 費率不足 5 元以 5 元計 (假設)
         if (averageRate < 5.0) {
             finalFee = usageAsDouble * 5.0
             calculationMethod = "MinimumRate"

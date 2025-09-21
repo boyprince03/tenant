@@ -31,7 +31,9 @@ import java.util.*
 
 @Composable
 fun TenantHomeScreen(
-    userId: String, // 【*** 修正：Int -> String ***】
+    userId: String,
+    // 【*** 核心修改 1：接收 Repository ***】
+    requestRepository: RoomChangeRequestRepository,
     onNavigate: (String) -> Unit = {},
     onLogout: () -> Unit
 ) {
@@ -41,7 +43,6 @@ fun TenantHomeScreen(
     val announcementDao = db.announcementDao()
     val roomDao = db.roomDao()
     val paymentDao = db.paymentDao()
-    val roomChangeRequestDao = db.roomChangeRequestDao()
 
     var currentUser by remember { mutableStateOf<User?>(null) }
     val scope = rememberCoroutineScope()
@@ -52,7 +53,8 @@ fun TenantHomeScreen(
     var roomDetails by remember { mutableStateOf<RoomEntity?>(null) }
     var paymentStatus by remember { mutableStateOf("查詢中...") }
 
-    val latestRequest by roomChangeRequestDao.getLatestRequestByTenantId(userId)
+    // 【*** 核心修改 2：從 Repository 監聽最新請求狀態 ***】
+    val latestRequest by requestRepository.getLatestRequestByTenantId(userId)
         .collectAsState(initial = null)
 
 
@@ -114,8 +116,6 @@ fun TenantHomeScreen(
                             leadingIcon = { Icon(Icons.Default.Logout, contentDescription = "登出")},
                             onClick = {
                                 expanded = false
-                                // 【*** 核心修改 2：這裡的 onLogout 會觸發 AppNavGraph 中的邏輯 ***】
-                                // 我們真正修改的地方在 AppNavGraph
                                 onLogout()
                             }
                         )
@@ -193,7 +193,7 @@ fun TenantHomeScreen(
                         }
                     }
                     TextButton(
-                        onClick = { onNavigate("announcement/$userId") }, // 【*** 修正：使用正确的 userId ***】
+                        onClick = { onNavigate("announcement/$userId") },
                         modifier = Modifier
                             .align(Alignment.End)
                             .padding(top = 8.dp)
@@ -300,7 +300,7 @@ fun RoomInfoDialog(
         return
     }
 
-    val depositMonths = if (room.rentAmount > 0) "(${room.deposit / room.rentAmount} 個月)" else ""
+    val depositMonths = if (room.rentAmount > 0 && room.deposit > 0) "(${room.deposit / room.rentAmount} 個月)" else ""
 
     AlertDialog(
         onDismissRequest = onDismiss,

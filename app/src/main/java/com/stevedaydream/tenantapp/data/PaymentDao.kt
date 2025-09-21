@@ -14,7 +14,9 @@ interface PaymentDao {
     @Query("SELECT * FROM payments WHERE roomNumber = :roomNo ORDER BY recordMonth DESC")
     fun getAllPaymentsForRoom(roomNo: String): Flow<List<Payment>>
 
-    // --- 【*** 新增此方法 ***】 ---
     @Query("SELECT * FROM payments WHERE roomNumber = :roomNo AND recordMonth = :month LIMIT 1")
     suspend fun getPaymentRecordNow(roomNo: String, month: String): Payment?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertOrUpdateAll(payments: List<Payment>) // 新增
 }

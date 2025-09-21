@@ -28,17 +28,20 @@ import java.util.*
 fun RoomChangeApprovalScreen(
     landlordId: String,
     db: AppDatabase,
-    navController: NavHostController
+    navController: NavHostController,
+    // 【*** 核心修改 1：接收所有需要的 Repository ***】
+    userRepository: UserRepository,
+    roomRepository: RoomRepository,
+    requestRepository: RoomChangeRequestRepository
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val requestDao = db.roomChangeRequestDao()
-    val roomDao = db.roomDao()
-    val userDao = db.userDao()
+    val userDao = db.userDao() // 仍然可以用來讀取本地快取的使用者資料
 
     var landlord by remember { mutableStateOf<User?>(null) }
+    // 【*** 核心修改 2：從 Repository 監聽資料 ***】
     val requests by remember(landlord) {
-        landlord?.landlordCode?.let { requestDao.getRequestsByLandlord(it) } ?: kotlinx.coroutines.flow.flowOf(emptyList())
+        landlord?.landlordCode?.let { requestRepository.getRequestsByLandlord(it) } ?: kotlinx.coroutines.flow.flowOf(emptyList())
     }.collectAsState(initial = emptyList())
 
     var selectedRequest by remember { mutableStateOf<RoomChangeRequest?>(null) }
@@ -55,26 +58,28 @@ fun RoomChangeApprovalScreen(
                 scope.launch {
                     val newStatus = if (isApproved) "approved" else "rejected"
                     val updatedRequest = req.copy(status = newStatus)
-                    requestDao.update(updatedRequest)
+
+                    // 【*** 核心修改 3：使用 Repository 更新請求狀態 ***】
+                    requestRepository.update(updatedRequest)
 
                     if (isApproved) {
-                        // 1. 找到房客 User
-                        val tenant = userDao.getUserById(req.tenantId)
-                        // 2. 找到舊房間和新房間
-                        val oldRoom = roomDao.getRoomByNumber(req.currentRoomNumber)
-                        val newRoom = roomDao.getRoomByNumber(req.requestedRoomNumber)
+                        // 1. 找到房客 User (使用 userRepository)
+                        val tenant = userRepository.getUser(req.tenantId)
+                        // 2. 找到舊房間和新房間 (用本地 dao 讀取是可以的)
+                        val oldRoom = db.roomDao().getRoomByNumber(req.currentRoomNumber)
+                        val newRoom = db.roomDao().getRoomByNumber(req.requestedRoomNumber)
 
                         if (tenant != null && oldRoom != null && newRoom != null) {
-                            // 3. 更新房客綁定的房間
-                            userDao.updateUser(tenant.copy(boundRoomNumber = req.requestedRoomNumber))
+                            // 3. 更新房客綁定的房間 (使用 userRepository)
+                            userRepository.updateUser(tenant.copy(boundRoomNumber = req.requestedRoomNumber))
 
-                            // 4. 更新舊房間狀態為「可租」
-                            roomDao.insertRoom(oldRoom.copy(tenantId = null, tenantName = "", status = "可租"))
+                            // 4. 更新舊房間狀態為「可租」 (使用 roomRepository)
+                            roomRepository.updateRoom(oldRoom.copy(tenantId = null, tenantName = "", status = "可租"))
 
-                            // 5. 更新新房間狀態為「出租中」並綁定租客
-                            roomDao.insertRoom(newRoom.copy(tenantId = tenant.id, tenantName = tenant.username, status = "出租中"))
+                            // 5. 更新新房間狀態為「出租中」並綁定租客 (使用 roomRepository)
+                            roomRepository.updateRoom(newRoom.copy(tenantId = tenant.id, tenantName = tenant.username, status = "出租中"))
 
-                            Toast.makeText(context, "已同意並更新房間資料", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, "已同意並更新雲端與本地資料", Toast.LENGTH_SHORT).show()
                         } else {
                             Toast.makeText(context, "更新失敗：找不到相關資料", Toast.LENGTH_SHORT).show()
                         }
@@ -108,7 +113,7 @@ fun RoomChangeApprovalScreen(
                 modifier = Modifier.padding(innerPadding).padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                items(requests) { request ->
+                items(requests, key = { it.id }) { request ->
                     RequestCard(request = request, onClick = { selectedRequest = request })
                 }
             }
@@ -119,16 +124,15 @@ fun RoomChangeApprovalScreen(
 @Composable
 private fun RequestCard(request: RoomChangeRequest, onClick: () -> Unit) {
     val dateFormat = remember { SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()) }
-    val statusColor = when (request.status) {
-        "approved" -> Color.Green.copy(alpha = 0.7f)
-        "rejected" -> Color.Red.copy(alpha = 0.7f)
-        else -> MaterialTheme.colorScheme.primary
+    val (statusText, statusColor) = when (request.status) {
+        "approved" -> "已核准" to Color.Green.copy(alpha = 0.7f)
+        "rejected" -> "已拒絕" to Color.Red.copy(alpha = 0.7f)
+        else -> "待審核" to MaterialTheme.colorScheme.primary
     }
 
-    // 【核心修改】將 .clickable(onClick) 改為 .clickable { onClick() }
     Card(modifier = Modifier
         .fillMaxWidth()
-        .clickable { onClick() }) { // <--- 修改的就是這一行
+        .clickable(enabled = request.status == "pending") { onClick() }) {
         Column(Modifier.padding(16.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text(
@@ -137,12 +141,14 @@ private fun RequestCard(request: RoomChangeRequest, onClick: () -> Unit) {
                     fontWeight = FontWeight.Bold
                 )
                 Text(
-                    request.status,
+                    statusText,
                     color = Color.White,
-                    modifier = Modifier.background(statusColor, RoundedCornerShape(4.dp)).padding(horizontal = 6.dp, vertical = 2.dp)
+                    modifier = Modifier
+                        .background(statusColor, RoundedCornerShape(4.dp))
+                        .padding(horizontal = 6.dp, vertical = 2.dp)
                 )
             }
-            Text("更換房間: 从 ${request.currentRoomNumber} 到 ${request.requestedRoomNumber}")
+            Text("更換房間: 從 ${request.currentRoomNumber} 到 ${request.requestedRoomNumber}")
             Text(
                 "申請時間: ${dateFormat.format(Date(request.requestDate))}",
                 style = MaterialTheme.typography.bodySmall,

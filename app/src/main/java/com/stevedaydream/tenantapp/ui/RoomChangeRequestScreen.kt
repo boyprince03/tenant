@@ -25,13 +25,14 @@ import kotlinx.coroutines.launch
 fun RoomChangeRequestScreen(
     userId: String,
     db: AppDatabase,
-    navController: NavHostController
+    navController: NavHostController,
+    // 【*** 核心修改 1：接收 Repository ***】
+    requestRepository: RoomChangeRequestRepository
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val userDao = db.userDao()
     val roomDao = db.roomDao()
-    val requestDao = db.roomChangeRequestDao()
 
     var currentUser by remember { mutableStateOf<User?>(null) }
     var availableRooms by remember { mutableStateOf<List<RoomEntity>>(emptyList()) }
@@ -42,8 +43,8 @@ fun RoomChangeRequestScreen(
         val user = userDao.getUserById(userId)
         currentUser = user
         if (user?.boundLandlordCode != null) {
+            // 注意：這裡理想情況也應透過 RoomRepository 讀取，但為求簡潔暫用 DAO
             val allRooms = roomDao.getRoomsByLandlordCode(user.boundLandlordCode!!)
-            // 過濾出可租的，且不是自己目前住的房間
             availableRooms = allRooms.filter {
                 it.status.contains("可租", ignoreCase = true) && it.roomNumber != user.boundRoomNumber
             }
@@ -78,7 +79,7 @@ fun RoomChangeRequestScreen(
                 Text("請選擇您想更換的新房間：", style = MaterialTheme.typography.titleMedium)
                 Spacer(Modifier.height(16.dp))
                 LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    items(availableRooms) { room ->
+                    items(availableRooms, key = { it.id }) { room ->
                         RoomSelectionCard(
                             room = room,
                             isSelected = room.roomNumber == selectedRoom?.roomNumber,
@@ -87,7 +88,6 @@ fun RoomChangeRequestScreen(
                     }
                 }
                 Spacer(Modifier.height(24.dp))
-                // --- 【*** 核心修改部分 ***】 ---
                 Button(
                     onClick = {
                         val user = currentUser
@@ -101,11 +101,9 @@ fun RoomChangeRequestScreen(
                                     currentRoomNumber = user.boundRoomNumber!!,
                                     requestedRoomNumber = room.roomNumber
                                 )
-                                requestDao.insert(newRequest)
+                                // 【*** 核心修改 2：使用 Repository 寫入 Firestore ***】
+                                requestRepository.insert(newRequest)
                                 Toast.makeText(context, "請求已送出，請靜待房東審核。", Toast.LENGTH_LONG).show()
-
-                                // 【修改點】簡化導覽邏輯，直接返回上一頁
-                                // TenantHomeScreen 會自動更新狀態
                                 navController.popBackStack()
                             }
                         }

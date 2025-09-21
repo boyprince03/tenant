@@ -7,12 +7,12 @@ import androidx.room.PrimaryKey
 
 @Entity(tableName = "repair_reports")
 data class RepairReport(
-    @PrimaryKey(autoGenerate = true) val id: Int = 0,
+    // 【*** 修正：將 id 從 Int 改為 String ***】
+    @PrimaryKey val id: String = "",
     val tenantName: String,
     val roomNumber: String,
     val issue: String,
     val description: String,
     val date: Long = System.currentTimeMillis(),
-    // --- 【核心修改】 ---
     val status: String = "待處理" // 新增狀態欄位，預設為待處理
 )
