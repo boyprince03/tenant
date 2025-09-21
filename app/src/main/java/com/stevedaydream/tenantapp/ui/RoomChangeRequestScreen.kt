@@ -26,7 +26,6 @@ fun RoomChangeRequestScreen(
     userId: String,
     db: AppDatabase,
     navController: NavHostController,
-    // 【*** 核心修改 1：接收 Repository ***】
     requestRepository: RoomChangeRequestRepository
 ) {
     val context = LocalContext.current
@@ -43,7 +42,6 @@ fun RoomChangeRequestScreen(
         val user = userDao.getUserById(userId)
         currentUser = user
         if (user?.boundLandlordCode != null) {
-            // 注意：這裡理想情況也應透過 RoomRepository 讀取，但為求簡潔暫用 DAO
             val allRooms = roomDao.getRoomsByLandlordCode(user.boundLandlordCode!!)
             availableRooms = allRooms.filter {
                 it.status.contains("可租", ignoreCase = true) && it.roomNumber != user.boundRoomNumber
@@ -101,7 +99,7 @@ fun RoomChangeRequestScreen(
                                     currentRoomNumber = user.boundRoomNumber!!,
                                     requestedRoomNumber = room.roomNumber
                                 )
-                                // 【*** 核心修改 2：使用 Repository 寫入 Firestore ***】
+                                // 【*** 核心修正：重新加入此行程式碼 ***】
                                 requestRepository.insert(newRequest)
                                 Toast.makeText(context, "請求已送出，請靜待房東審核。", Toast.LENGTH_LONG).show()
                                 navController.popBackStack()
