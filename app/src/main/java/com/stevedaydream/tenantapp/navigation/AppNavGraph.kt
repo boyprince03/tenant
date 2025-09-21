@@ -115,7 +115,6 @@ fun AppNavGraph(navController: NavHostController, db: AppDatabase) {
             )
         }
         composable("visitor_home") {
-            // 建立 Factory 並傳入
             val factory = VisitorViewModelFactory(db.announcementDao(), db.roomDao())
             VisitorHomeScreen(
                 navController = navController,
@@ -201,7 +200,6 @@ fun AppNavGraph(navController: NavHostController, db: AppDatabase) {
             arguments = listOf(navArgument("userId") { type = NavType.StringType })
         ) { backStackEntry ->
             val userId = backStackEntry.arguments?.getString("userId") ?: ""
-            // 建立 Factory 並傳入
             val factory = TenantViewModelFactory(userId, db, requestRepository)
             TenantHomeScreen(
                 navController = navController,
@@ -231,7 +229,6 @@ fun AppNavGraph(navController: NavHostController, db: AppDatabase) {
             arguments = listOf(navArgument("userId") { type = NavType.StringType })
         ) { backStackEntry ->
             val userId = backStackEntry.arguments?.getString("userId") ?: ""
-            // 【*** 修正：傳遞 Repositories 和 DAOs ***】
             TenantPaymentScreen(
                 userId = userId,
                 navController = navController,
@@ -275,7 +272,6 @@ fun AppNavGraph(navController: NavHostController, db: AppDatabase) {
             arguments = listOf(navArgument("userId") { type = NavType.StringType })
         ) { backStackEntry ->
             val userId = backStackEntry.arguments?.getString("userId") ?: ""
-            // 建立 Factory 並傳入
             val factory = LandlordViewModelFactory(userId, db, requestRepository)
             LandlordHomeScreen(
                 navController = navController,
@@ -355,15 +351,6 @@ fun AppNavGraph(navController: NavHostController, db: AppDatabase) {
                 )
             }
         }
-        composable("repair_screen/{userId}") { backStackEntry ->
-            val userId = backStackEntry.arguments?.getString("userId") ?: ""
-            RepairScreen(
-                navController = navController,
-                dao = db.repairReportDao(),
-                db = db,
-                userId = userId
-            )
-        }
 
         composable(
             "history/{userId}",
@@ -387,10 +374,9 @@ fun AppNavGraph(navController: NavHostController, db: AppDatabase) {
             arguments = listOf(navArgument("userRole") { type = NavType.StringType })
         ) { backStackEntry ->
             val userRole = backStackEntry.arguments?.getString("userRole") ?: "tenant"
-            // 【*** 修正：傳遞 meterRepository ***】
             ElectricityCalcScreen(
                 roomDao = db.roomDao(),
-                meterRepository = electricMeterRepository, // 改為傳遞 Repository
+                meterRepository = electricMeterRepository,
                 navController = navController,
                 onNavigateToQuery = { userId -> navController.navigate("electricity_query/$userId") },
                 userRole = userRole
@@ -406,4 +392,3 @@ fun AppNavGraph(navController: NavHostController, db: AppDatabase) {
         }
     }
 }
-

@@ -163,7 +163,9 @@ fun TenantHomeScreen(
                     Text("查看我的租屋資訊", style = MaterialTheme.typography.bodyLarge)
                 }
 
-                if (currentUser?.boundRoomNumber != null) {
+                // --- 【*** 以下為新增/修正的按鈕 ***】 ---
+                // 條件：必須綁定房間，且沒有正在審核中的請求
+                if (currentUser?.boundRoomNumber != null && uiState.latestRequest?.status != "pending") {
                     ElevatedButton(
                         modifier = Modifier.fillMaxWidth(),
                         onClick = { currentUser.id.let { navController.navigate("request_room_change/$it") } }
@@ -172,6 +174,7 @@ fun TenantHomeScreen(
                         Text("申請更換房間", style = MaterialTheme.typography.bodyLarge)
                     }
                 }
+                // --- 【*** 新增結束 ***】 ---
                 ElevatedButton(
                     modifier = Modifier.fillMaxWidth(),
                     onClick = { currentUser?.id?.let { navController.navigate("tenant_payment/$it") } }

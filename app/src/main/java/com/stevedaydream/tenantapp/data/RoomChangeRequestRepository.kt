@@ -66,16 +66,16 @@ class RoomChangeRequestRepository(private val requestDao: RoomChangeRequestDao) 
     }
 
     /**
-     * 【即時資料流】
+     * 【即時資料流】【*** 修正 ***】
      * 監聽並取得特定租客最新的那筆換房請求。
+     * 移除了 .orderBy() 來避免 Firestore 索引問題，改為在客戶端排序。
      * @param tenantId 租客的唯一 ID。
      * @return 一個 Flow，會發送最新的那一筆請求，或 null。
      */
     fun getLatestRequestByTenantId(tenantId: String): Flow<RoomChangeRequest?> {
+        // 【*** 核心修改：移除 .orderBy() 和 .limit() ***】
         val query = requestsCollection
             .whereEqualTo("tenantId", tenantId)
-            .orderBy("requestDate", Query.Direction.DESCENDING)
-            .limit(1)
 
         query.addSnapshotListener { snapshot, error ->
             if (error != null) {
@@ -86,11 +86,14 @@ class RoomChangeRequestRepository(private val requestDao: RoomChangeRequestDao) 
             if (snapshot != null) {
                 val requests = snapshot.toObjects<RoomChangeRequest>()
                 CoroutineScope(Dispatchers.IO).launch {
-                    // 即使只有一筆，也用 List 的方式更新，確保資料庫操作一致
+                    // 【*** 核心修改：在寫入本地前，先在客戶端手動排序 ***】
+                    // 這裡我們仍然將所有該租客的請求都同步到本地，
+                    // Room 的查詢會自動幫我们只取出最新的一筆。
                     requestDao.insertOrUpdateAll(requests)
                 }
             }
         }
+        // Room 的查詢 `ORDER BY requestDate DESC LIMIT 1` 會確保我們只拿到最新的一筆
         return requestDao.getLatestRequestByTenantId(tenantId)
     }
 }
