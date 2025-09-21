@@ -105,6 +105,58 @@ class AdminRepository {
         }
     }
 
+    /**
+     * 【*** 新增 ***】
+     * 取得所有角色為房東的使用者。
+     */
+    suspend fun getAllLandlords(): List<User> {
+        return try {
+            firestore.collection("users")
+                .whereEqualTo("role", "landlord")
+                .get().await().toObjects(User::class.java)
+        } catch (e: Exception) {
+            Log.e("AdminRepository", "Error getting landlords", e)
+            emptyList()
+        }
+    }
+
+    /**
+     * 【*** 新增 ***】
+     * 取得所有尚未指派給任何房東的房間。
+     */
+    suspend fun getUnassignedRooms(): List<RoomEntity> {
+        return try {
+            firestore.collection("rooms")
+                .whereEqualTo("landlordCode", null)
+                .get().await().toObjects(RoomEntity::class.java)
+        } catch (e: Exception) {
+            Log.e("AdminRepository", "Error getting unassigned rooms", e)
+            emptyList()
+        }
+    }
+
+    /**
+     * 【*** 新增 ***】
+     * 使用批次寫入將多個房間指派給一位房東。
+     * @param roomIds 要更新的房間 ID 列表。
+     * @param landlordCode 要指派的房東序號。
+     * @return 操作是否成功。
+     */
+    suspend fun assignRoomsToLandlord(roomIds: List<String>, landlordCode: String): Boolean {
+        return try {
+            val batch = firestore.batch()
+            roomIds.forEach { roomId ->
+                val docRef = firestore.collection("rooms").document(roomId)
+                batch.update(docRef, "landlordCode", landlordCode)
+            }
+            batch.commit().await()
+            true
+        } catch (e: Exception) {
+            Log.e("AdminRepository", "Error assigning rooms", e)
+            false
+        }
+    }
+
 
     /**
      * 【警告】刪除 Firestore 資料庫中的所有資料！
