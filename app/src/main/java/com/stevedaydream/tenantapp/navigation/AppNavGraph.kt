@@ -28,14 +28,25 @@ import kotlinx.coroutines.launch
 
 @Composable
 fun AppNavGraph(navController: NavHostController, db: AppDatabase) {
-    val scope = rememberCoroutineScope() // Scope for repositories
+    val scope = rememberCoroutineScope()
 
-    // --- Repositories Initialization ---
     val authRepository = remember { AuthRepository(db.userDao()) }
     val roomRepository = remember { RoomRepository(db.roomDao(), scope) }
     val userRepository = remember { UserRepository(db.userDao(), scope) }
     val requestRepository = remember { RoomChangeRequestRepository(db.roomChangeRequestDao()) }
-    val adminRepository = remember { AdminRepository(db.userDao(), db.roomDao(), scope) }
+    val adminRepository = remember {
+        AdminRepository(
+            userDao = db.userDao(),
+            roomDao = db.roomDao(),
+            repairReportDao = db.repairReportDao(),
+            announcementDao = db.announcementDao(),
+            paymentDao = db.paymentDao(),
+            electricMeterDao = db.electricMeterDao(),
+            roomChangeRequestDao = db.roomChangeRequestDao(),
+            db = db,
+            coroutineScope = scope
+        )
+    }
     val repairReportRepository = remember { RepairReportRepository(db.repairReportDao(), scope) }
     val announcementRepository = remember { AnnouncementRepository(db.announcementDao(), scope) }
     val electricMeterRepository = remember { ElectricMeterRepository(db.electricMeterDao(), scope) }
@@ -140,6 +151,12 @@ fun AppNavGraph(navController: NavHostController, db: AppDatabase) {
                 }
             )
         }
+        composable("admin_test_data") {
+            AdminTestDataScreen(
+                navController = navController,
+                adminRepository = adminRepository
+            )
+        }
         composable("user_list") {
             UserListScreen(
                 navController = navController,
@@ -147,9 +164,7 @@ fun AppNavGraph(navController: NavHostController, db: AppDatabase) {
                 authRepository = authRepository
             )
         }
-        // Other admin "more" pages...
 
-        // --- 【*** 核心修正：將 repairReportRepository 傳遞給 RepairHistoryScreen ***】 ---
         composable(
             "history/{userId}",
             arguments = listOf(navArgument("userId") { type = NavType.StringType })
@@ -175,7 +190,7 @@ fun AppNavGraph(navController: NavHostController, db: AppDatabase) {
                 val isLandlord = user?.role == "landlord"
                 RepairHistoryScreen(
                     navController = navController,
-                    repository = repairReportRepository, // 傳入 Repository 而非 DAO
+                    repository = repairReportRepository,
                     isLandlord = isLandlord
                 )
             }
@@ -282,7 +297,8 @@ fun AppNavGraph(navController: NavHostController, db: AppDatabase) {
             if(isLoadingUser) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
             } else {
-                RoomManageScreen(roomRepository = roomRepository, currentUser = currentUser, navController = navController)
+                // *** 使用重新命名的 Composable ***
+                LandlordRoomManageScreen(roomRepository = roomRepository, currentUser = currentUser, navController = navController)
             }
         }
         composable(
@@ -296,7 +312,7 @@ fun AppNavGraph(navController: NavHostController, db: AppDatabase) {
             )
         }
         composable(
-            "excel_import/{userId}", // 新增 userId 參數
+            "excel_import/{userId}",
             arguments = listOf(navArgument("userId") { type = NavType.StringType })
         ) { backStackEntry ->
             val userId = backStackEntry.arguments?.getString("userId")
@@ -348,7 +364,6 @@ fun AppNavGraph(navController: NavHostController, db: AppDatabase) {
             arguments = listOf(navArgument("userId") { type = NavType.StringType })
         ) { backStackEntry ->
             val userId = backStackEntry.arguments?.getString("userId") ?: ""
-            // 【*** 核心修改：將 repository 傳遞給 Screen ***】
             ElectricityQueryScreen(
                 userId = userId,
                 db = db,
@@ -356,14 +371,15 @@ fun AppNavGraph(navController: NavHostController, db: AppDatabase) {
                 electricMeterRepository = electricMeterRepository
             )
         }
-        // --- Dummy routes from Admin Home ---
+        // Admin "More" Pages
         composable("request_list_admin") {
             Scaffold(topBar = { TopAppBar(title = { Text("所有換房請求")}, navigationIcon = { IconButton(onClick = { navController.popBackStack()}) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null)}})}) {
                 Box(Modifier.fillMaxSize().padding(it), contentAlignment = Alignment.Center) { Text("換房請求列表頁面") }
             }
         }
+        // *** 將路由指向新的 Composable ***
         composable("room_list_admin") {
-            RoomManageScreen(roomRepository = roomRepository, currentUser = null, navController = navController)
+            AdminRoomListScreen(navController = navController, adminRepository = adminRepository)
         }
         composable("repair_history_admin") {
             RepairHistoryScreen(navController = navController, repository = repairReportRepository, isLandlord = true)

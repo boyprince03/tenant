@@ -8,11 +8,14 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.DeleteForever
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.FileUpload
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Input
+import androidx.compose.material.icons.filled.Science
+import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -36,30 +39,29 @@ fun AdminHomeScreen(
     val viewModel: AdminViewModel = viewModel(factory = AdminViewModelFactory(adminRepository))
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
-    var showResetConfirmDialog by remember { mutableStateOf(false) }
+    var showResetCloudDialog by remember { mutableStateOf(false) }
+    var showResetLocalDialog by remember { mutableStateOf(false) }
 
-    // 監聽指派訊息的變化，並顯示 Toast
     LaunchedEffect(uiState.assignmentMessage) {
         uiState.assignmentMessage?.let {
             Toast.makeText(context, it, Toast.LENGTH_LONG).show()
-            viewModel.clearAssignmentMessage() // 顯示後立即清除，避免重複觸發
+            viewModel.clearAssignmentMessage()
         }
     }
 
-    // 確認重置對話框
-    if (showResetConfirmDialog) {
+    if (showResetCloudDialog) {
         AlertDialog(
-            onDismissRequest = { showResetConfirmDialog = false },
-            title = { Text("確認重置？", fontWeight = FontWeight.Bold) },
+            onDismissRequest = { showResetCloudDialog = false },
+            title = { Text("確認重置雲端？", fontWeight = FontWeight.Bold) },
             text = { Text("此操作將會刪除 Firestore 雲端資料庫中的所有資料，且無法復原。確定要繼續嗎？") },
             confirmButton = {
                 Button(
                     onClick = {
-                        showResetConfirmDialog = false
+                        showResetCloudDialog = false
                         viewModel.resetDatabase { success, message ->
                             Toast.makeText(context, message, Toast.LENGTH_LONG).show()
                             if (success) {
-                                onLogout() // 重置後通常需要登出
+                                onLogout()
                             }
                         }
                     },
@@ -67,7 +69,31 @@ fun AdminHomeScreen(
                 ) { Text("確定刪除") }
             },
             dismissButton = {
-                TextButton(onClick = { showResetConfirmDialog = false }) { Text("取消") }
+                TextButton(onClick = { showResetCloudDialog = false }) { Text("取消") }
+            }
+        )
+    }
+
+    if (showResetLocalDialog) {
+        AlertDialog(
+            onDismissRequest = { showResetLocalDialog = false },
+            title = { Text("確認重置本地資料庫？", fontWeight = FontWeight.Bold) },
+            text = { Text("此操作將會清除此裝置上的所有快取資料，App 將需要重新從雲端同步。確定要繼續嗎？") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showResetLocalDialog = false
+                        viewModel.resetLocalDatabase { success, message ->
+                            Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+                            if (success) {
+                                onLogout()
+                            }
+                        }
+                    },
+                ) { Text("確定清除") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showResetLocalDialog = false }) { Text("取消") }
             }
         )
     }
@@ -84,8 +110,7 @@ fun AdminHomeScreen(
             )
         }
     ) { innerPadding ->
-        // 全螢幕載入遮罩
-        if (uiState.isResetting || uiState.isLoading) {
+        if (uiState.isResetting || uiState.isLoading || uiState.isSyncing) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -97,7 +122,11 @@ fun AdminHomeScreen(
                     CircularProgressIndicator(color = Color.White)
                     Spacer(Modifier.height(16.dp))
                     Text(
-                        if (uiState.isResetting) "正在重置資料庫..." else "載入資料中...",
+                        text = when {
+                            uiState.isResetting -> "正在重置資料庫..."
+                            uiState.isSyncing -> "正在同步雲端資料..."
+                            else -> "載入資料中..."
+                        },
                         color = Color.White,
                         style = MaterialTheme.typography.titleLarge
                     )
@@ -115,6 +144,39 @@ fun AdminHomeScreen(
             item {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                ) {
+                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("資料庫管理", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                        Text("用於開發與除錯。", style = MaterialTheme.typography.bodySmall)
+                        Divider()
+                        // 【*** 新增按鈕 ***】
+                        Button(
+                            onClick = {
+                                viewModel.syncAllData { _, message ->
+                                    Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(Icons.Default.CloudDownload, contentDescription = "同步資料", modifier = Modifier.padding(end = 8.dp))
+                            Text("同步雲端資料至本地")
+                        }
+                        Spacer(Modifier.height(8.dp))
+                        OutlinedButton(
+                            onClick = { showResetLocalDialog = true },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(Icons.Default.Storage, contentDescription = "重置本地資料庫", modifier = Modifier.padding(end = 8.dp))
+                            Text("重置本地資料庫 (清除快取)")
+                        }
+                    }
+                }
+            }
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
                     elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
                 ) {
@@ -123,12 +185,21 @@ fun AdminHomeScreen(
                         Text("以下按鈕會對資料庫造成永久性改變，請謹慎操作。", style = MaterialTheme.typography.bodySmall)
                         Divider()
                         Button(
-                            onClick = { showResetConfirmDialog = true },
+                            onClick = { navController.navigate("admin_test_data") },
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(Icons.Default.Science, contentDescription = "產生測試資料", modifier = Modifier.padding(end = 8.dp))
+                            Text("產生測試資料")
+                        }
+                        Spacer(Modifier.height(8.dp))
+                        Button(
+                            onClick = { showResetCloudDialog = true },
                             colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Icon(Icons.Default.DeleteForever, contentDescription = "重置資料庫", modifier = Modifier.padding(end = 8.dp))
-                            Text("重置雲端資料庫")
+                            Icon(Icons.Default.DeleteForever, contentDescription = "重置雲端資料庫", modifier = Modifier.padding(end = 8.dp))
+                            Text("重置雲端資料庫 (刪除所有資料)")
                         }
                     }
                 }
@@ -182,7 +253,6 @@ fun AssignRoomCard(
     onAssignClicked: () -> Unit
 ) {
     StepCard(step = "功能", title = "指派房間給房東", icon = Icons.Default.Home) {
-        // 1. 房東選擇下拉選單
         var expanded by remember { mutableStateOf(false) }
         ExposedDropdownMenuBox(
             expanded = expanded,
@@ -218,7 +288,6 @@ fun AssignRoomCard(
             }
         }
 
-        // 2. 顯示未指派的房間列表 (如果已選擇房東)
         if (uiState.selectedLandlord != null) {
             Spacer(Modifier.height(8.dp))
             Text("選擇要指派的房間:", style = MaterialTheme.typography.titleSmall)
@@ -226,7 +295,6 @@ fun AssignRoomCard(
             if (uiState.unassignedRooms.isEmpty()) {
                 Text("目前沒有未指派的房間。", color = MaterialTheme.colorScheme.onSurfaceVariant)
             } else {
-                // 如果房間數很多，需要考慮效能，但管理員介面通常還好
                 Column {
                     uiState.unassignedRooms.forEach { room ->
                         Row(
@@ -247,7 +315,6 @@ fun AssignRoomCard(
             }
         }
 
-        // 3. 指派按鈕
         Button(
             onClick = onAssignClicked,
             enabled = uiState.selectedLandlord != null && uiState.selectedRoomIdsToAssign.isNotEmpty(),
@@ -296,7 +363,7 @@ fun <T> DataCard(
             if (data.isEmpty()) {
                 Text("沒有資料", color = MaterialTheme.colorScheme.onSurfaceVariant)
             } else {
-                data.take(3).forEach { item -> // 只顯示前三筆
+                data.take(3).forEach { item ->
                     Box(Modifier.padding(vertical = 4.dp)) {
                         itemContent(item)
                     }

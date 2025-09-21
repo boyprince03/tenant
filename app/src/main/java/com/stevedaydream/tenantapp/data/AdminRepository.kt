@@ -10,6 +10,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
+import java.util.UUID
 
 /**
  * 用於執行管理員等級操作的 Repository。
@@ -17,12 +18,109 @@ import kotlinx.coroutines.withContext
 class AdminRepository(
     private val userDao: UserDao,
     private val roomDao: RoomDao,
+    private val repairReportDao: RepairReportDao,
+    private val announcementDao: AnnouncementDao,
+    private val paymentDao: PaymentDao, // Added
+    private val electricMeterDao: ElectricMeterDao, // Added
+    private val roomChangeRequestDao: RoomChangeRequestDao, // Added
+    private val db: AppDatabase,
     private val coroutineScope: CoroutineScope
 ) {
 
     private val firestore = FirebaseFirestore.getInstance()
 
-    // --- New Methods for AdminHomeScreen ---
+    /**
+     * 【*** 新增此方法 ***】
+     * 從 Firestore 拉取所有集合的資料，並完全覆寫本地 Room 資料庫。
+     * @return Pair<Boolean, String> - first is success, second is message
+     */
+    suspend fun syncAllDataFromCloud(): Pair<Boolean, String> {
+        return try {
+            withContext(Dispatchers.IO) {
+                // 1. 從 Firestore 獲取所有資料
+                val users = firestore.collection("users").get().await().toObjects<User>()
+                val rooms = firestore.collection("rooms").get().await().toObjects<RoomEntity>()
+                val reports = firestore.collection("repair_reports").get().await().toObjects<RepairReport>()
+                val announcements = firestore.collection("announcements").get().await().toObjects<Announcement>()
+                val payments = firestore.collection("payments").get().await().toObjects<Payment>()
+                val records = firestore.collection("electric_meter_records").get().await().toObjects<ElectricMeterRecord>()
+                val requests = firestore.collection("room_change_requests").get().await().toObjects<RoomChangeRequest>()
+
+                // 2. 清除本地所有資料表
+                db.clearAllTables()
+
+                // 3. 將從雲端獲取的資料寫入本地資料庫
+                userDao.insertOrUpdateAll(users)
+                roomDao.insertRooms(rooms)
+                repairReportDao.insertOrUpdateAll(reports)
+                announcementDao.insertOrUpdateAll(announcements)
+                paymentDao.insertOrUpdateAll(payments)
+                electricMeterDao.insertOrUpdateRecords(records)
+                roomChangeRequestDao.insertOrUpdateAll(requests)
+            }
+            Pair(true, "成功將所有雲端資料同步至本地資料庫！")
+        } catch (e: Exception) {
+            Log.e("AdminRepository", "Failed to sync all data from cloud", e)
+            Pair(false, "同步失敗: ${e.message}")
+        }
+    }
+
+
+    suspend fun resetLocalDatabase(): Pair<Boolean, String> {
+        return try {
+            withContext(Dispatchers.IO) {
+                db.clearAllTables()
+            }
+            Pair(true, "本地資料庫已成功清空！")
+        } catch (e: Exception) {
+            Log.e("AdminRepository", "Failed to reset local database", e)
+            Pair(false, "重置本地資料庫失敗: ${e.message}")
+        }
+    }
+
+
+    private suspend fun <T : Any> batchInsert(collectionName: String, data: List<T>, localInsert: suspend (List<T>) -> Unit): Pair<Boolean, String> {
+        return try {
+            val collection = firestore.collection(collectionName)
+            val batch = firestore.batch()
+            data.forEach { item ->
+                val id = when (item) {
+                    is User -> item.id
+                    is RoomEntity -> item.id
+                    is Announcement -> item.id
+                    is RepairReport -> item.id
+                    else -> UUID.randomUUID().toString()
+                }
+                val docId = if (id.isNotBlank()) id else UUID.randomUUID().toString()
+                batch.set(collection.document(docId), item)
+            }
+            batch.commit().await()
+            withContext(Dispatchers.IO) {
+                localInsert(data)
+            }
+            Pair(true, "成功新增 ${data.size} 筆 $collectionName 資料到雲端與本地。")
+        } catch (e: Exception) {
+            Log.e("AdminRepository", "Error batch inserting to $collectionName", e)
+            Pair(false, "新增 $collectionName 資料失敗: ${e.message}")
+        }
+    }
+
+    suspend fun insertTestUsers(users: List<User>): Pair<Boolean, String> {
+        return batchInsert("users", users) { userDao.insertOrUpdateAll(it) }
+    }
+
+    suspend fun insertTestRooms(rooms: List<RoomEntity>): Pair<Boolean, String> {
+        return batchInsert("rooms", rooms) { roomDao.insertRooms(it) }
+    }
+
+    suspend fun insertTestAnnouncements(announcements: List<Announcement>): Pair<Boolean, String> {
+        return batchInsert("announcements", announcements) { announcementDao.insertOrUpdateAll(it) }
+    }
+
+    suspend fun insertTestRepairReports(reports: List<RepairReport>): Pair<Boolean, String> {
+        return batchInsert("repair_reports", reports) { repairReportDao.insertOrUpdateAll(it) }
+    }
+
 
     suspend fun getAllUsers(limit: Int = 0): List<User> {
         return try {
@@ -141,7 +239,6 @@ class AdminRepository(
             val batch = firestore.batch()
             val updatedRooms = mutableListOf<RoomEntity>()
 
-            // First, fetch the rooms to be updated
             for (roomId in roomIds) {
                 val roomDoc = firestore.collection("rooms").document(roomId).get().await()
                 val room = roomDoc.toObject(RoomEntity::class.java)
@@ -150,17 +247,15 @@ class AdminRepository(
                 }
             }
 
-            // Now, update them in a batch
             for (room in updatedRooms) {
                 val docRef = firestore.collection("rooms").document(room.id)
-                batch.set(docRef, room) // Use set to overwrite the whole object
+                batch.set(docRef, room)
             }
 
             batch.commit().await()
 
-            // After successful Firestore update, update local cache
             withContext(Dispatchers.IO) {
-                roomDao.insertRooms(updatedRooms) // Assumes OnConflictStrategy.REPLACE
+                roomDao.insertRooms(updatedRooms)
             }
 
             true
@@ -173,28 +268,20 @@ class AdminRepository(
 
     suspend fun updateUser(user: User) {
         if (user.id.isBlank()) throw IllegalArgumentException("User ID cannot be blank for an update.")
-        // 1. Update Firestore
         firestore.collection("users").document(user.id).set(user).await()
-        // 2. Update local Room database
         withContext(Dispatchers.IO) {
-            userDao.insert(user) // Assumes OnConflictStrategy.REPLACE
+            userDao.insert(user)
         }
     }
 
     suspend fun deleteUser(user: User) {
         if (user.id.isBlank()) throw IllegalArgumentException("User ID cannot be blank for deletion.")
-        // 1. Delete from Firestore
         firestore.collection("users").document(user.id).delete().await()
-        // 2. Delete from local Room database
         withContext(Dispatchers.IO) {
             userDao.delete(user)
         }
     }
 
-    /**
-     * 【警告】刪除 Firestore 資料庫中的所有資料！
-     * @return Pair<Boolean, String> - first is success, second is message
-     */
     suspend fun resetEntireDatabase(): Pair<Boolean, String> {
         val collectionNames = listOf(
             "users", "rooms", "room_change_requests",

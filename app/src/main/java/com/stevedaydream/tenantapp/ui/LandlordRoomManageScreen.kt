@@ -30,11 +30,12 @@ import java.util.*
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun RoomManageScreen(
+fun LandlordRoomManageScreen( // <-- Class name changed
     roomRepository: RoomRepository,
     currentUser: User?,
     navController: NavHostController
 ) {
+    // 內容不變，除了 Composable 函式名稱
     val landlordCode = currentUser?.landlordCode ?: ""
     val rooms by roomRepository.getRoomsForLandlord(landlordCode).collectAsState(initial = emptyList())
 
@@ -103,7 +104,6 @@ fun RoomManageScreen(
                 isNew = isCreatingNew,
                 onDismiss = { showDialog = false },
                 onSave = { room ->
-                    // 【核心修改】立即關閉 Dialog，然後在背景執行儲存
                     showDialog = false
                     scope.launch {
                         try {
@@ -112,7 +112,6 @@ fun RoomManageScreen(
                             } else {
                                 roomRepository.updateRoom(room)
                             }
-                            // 成功後顯示提示
                             withContext(Dispatchers.Main) {
                                 Toast.makeText(context, "儲存成功！", Toast.LENGTH_SHORT).show()
                             }
@@ -124,7 +123,6 @@ fun RoomManageScreen(
                     }
                 },
                 onDelete = { room ->
-                    // 【核心修改】刪除也採用相同模式
                     showDialog = false
                     scope.launch {
                         try {
@@ -145,17 +143,14 @@ fun RoomManageScreen(
 }
 
 
-// RoomEditDialog, RoomItemCard, InfoRow 保持不變，此處省略以保持簡潔
-// 您可以繼續使用上一版本中的程式碼
 @Composable
 fun RoomEditDialog(
     room: RoomEntity,
-    isNew: Boolean, // 用於判斷是新增還是編輯
+    isNew: Boolean,
     onDismiss: () -> Unit,
     onSave: (RoomEntity) -> Unit,
     onDelete: (RoomEntity) -> Unit
 ) {
-    // Dialog 內部邏輯幾乎不變，只是新增一個 isNew 參數來決定是否顯示刪除按鈕
     var roomNumber by remember { mutableStateOf(room.roomNumber) }
     var tenantName by remember { mutableStateOf(room.tenantName) }
     var type by remember { mutableStateOf(room.type) }
@@ -172,7 +167,6 @@ fun RoomEditDialog(
     val sdf = remember { SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()) }
     val context = LocalContext.current
 
-    // DatePicker 和 LaunchedEffect 邏輯保持不變...
     fun showDatePicker(onDateSet: (String) -> Unit) {
         val c = Calendar.getInstance()
         if (rentStartDate.isNotBlank()) {
@@ -265,7 +259,7 @@ fun RoomEditDialog(
         },
         dismissButton = {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (!isNew) { // 只有在編輯模式下才顯示刪除按鈕
+                if (!isNew) {
                     Button(
                         onClick = { onDelete(room) },
                         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
@@ -314,4 +308,3 @@ private fun InfoRow(label: String, value: String) {
         Text(text = value, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
-

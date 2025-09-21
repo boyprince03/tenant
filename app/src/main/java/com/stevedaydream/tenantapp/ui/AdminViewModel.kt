@@ -20,15 +20,14 @@ data class AdminUiState(
     val electricMeterRecords: List<ElectricMeterRecord> = emptyList(),
     val isLoading: Boolean = true,
 
-    // 指派房間功能相關狀態
     val landlords: List<User> = emptyList(),
     val unassignedRooms: List<RoomEntity> = emptyList(),
     val selectedLandlord: User? = null,
     val selectedRoomIdsToAssign: Set<String> = emptySet(),
     val assignmentMessage: String? = null,
 
-    // 重置資料庫功能相關狀態
-    val isResetting: Boolean = false
+    val isResetting: Boolean = false,
+    val isSyncing: Boolean = false // Added
 )
 
 class AdminViewModel(private val adminRepository: AdminRepository) : ViewModel() {
@@ -70,21 +69,14 @@ class AdminViewModel(private val adminRepository: AdminRepository) : ViewModel()
                 }
             } catch (e: Exception) {
                 _uiState.update { it.copy(isLoading = false) }
-                // Handle error appropriately, e.g., show a message
             }
         }
     }
 
-    /**
-     * 處理使用者在下拉選單中選擇房東的事件。
-     */
     fun onLandlordSelected(landlord: User) {
         _uiState.update { it.copy(selectedLandlord = landlord) }
     }
 
-    /**
-     * 處理使用者勾選或取消勾選要指派的房間。
-     */
     fun onRoomToAssignSelectionChanged(roomId: String) {
         _uiState.update {
             val currentSelection = it.selectedRoomIdsToAssign.toMutableSet()
@@ -97,9 +89,6 @@ class AdminViewModel(private val adminRepository: AdminRepository) : ViewModel()
         }
     }
 
-    /**
-     * 執行指派房間的核心邏輯。
-     */
     fun assignSelectedRooms() {
         viewModelScope.launch {
             val landlord = _uiState.value.selectedLandlord
@@ -111,11 +100,11 @@ class AdminViewModel(private val adminRepository: AdminRepository) : ViewModel()
                     _uiState.update {
                         it.copy(
                             assignmentMessage = "成功指派 ${roomIds.size} 間房間給 ${landlord.username}",
-                            selectedLandlord = null, // 重設選擇
-                            selectedRoomIdsToAssign = emptySet() // 重設勾選
+                            selectedLandlord = null,
+                            selectedRoomIdsToAssign = emptySet()
                         )
                     }
-                    loadAllData() // 重新載入所有資料以反映變更
+                    loadAllData()
                 } else {
                     _uiState.update { it.copy(assignmentMessage = "指派失敗，請檢查網路連線。") }
                 }
@@ -123,23 +112,41 @@ class AdminViewModel(private val adminRepository: AdminRepository) : ViewModel()
         }
     }
 
-    /**
-     * 清除提示訊息，避免重複顯示。
-     */
     fun clearAssignmentMessage() {
         _uiState.update { it.copy(assignmentMessage = null) }
     }
 
-    /**
-     * 重置整個 Firestore 資料庫 (僅供開發使用)
-     * @param onResult 操作完成後的回呼，傳回操作是否成功以及結果訊息。
-     */
     fun resetDatabase(onResult: (Boolean, String) -> Unit) {
         viewModelScope.launch {
             _uiState.update { it.copy(isResetting = true) }
             val (success, message) = adminRepository.resetEntireDatabase()
             _uiState.update { it.copy(isResetting = false) }
             onResult(success, message)
+        }
+    }
+
+    fun resetLocalDatabase(onResult: (Boolean, String) -> Unit) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isResetting = true) }
+            val (success, message) = adminRepository.resetLocalDatabase()
+            _uiState.update { it.copy(isResetting = false) }
+            onResult(success, message)
+        }
+    }
+
+    /**
+     * 【*** 新增此方法 ***】
+     * 將所有雲端資料同步至本地。
+     */
+    fun syncAllData(onResult: (Boolean, String) -> Unit) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isSyncing = true) }
+            val (success, message) = adminRepository.syncAllDataFromCloud()
+            _uiState.update { it.copy(isSyncing = false) }
+            onResult(success, message)
+            if(success) {
+                loadAllData() // 同步成功後重新整理儀表板的預覽資料
+            }
         }
     }
 }

@@ -27,6 +27,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun paymentDao(): PaymentDao
     abstract fun roomChangeRequestDao(): RoomChangeRequestDao
 
+    // 【*** 新增：RoomDatabase 會自動實作此方法 ***】
+    // abstract fun clearAllTables() // RoomDatabase 已經內建了這個方法，我們可以直接呼叫
 
     companion object {
         @Volatile private var instance: AppDatabase? = null
