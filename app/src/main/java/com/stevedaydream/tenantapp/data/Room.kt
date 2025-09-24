@@ -24,5 +24,7 @@ data class RoomEntity(
     var landlordCode: String? = null,
     val address: String = "未提供", // 提供預設值
     val floor: String = "未提供", // 提供預設值
-    val size: String = "未提供" // 提供預設值
+    val size: String = "未提供", // 提供預設值
+    // 用一個 List<String> 來儲存所有圖片的下載 URL
+    val imageUrls: List<String> = emptyList()
 )

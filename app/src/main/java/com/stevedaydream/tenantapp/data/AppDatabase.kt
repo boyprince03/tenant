@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.TypeConverters // <<< ---【*** 新增 import ***】---
 
 @Database(
     entities = [
@@ -15,9 +16,10 @@ import androidx.room.RoomDatabase
         Payment::class,
         RoomChangeRequest::class
     ],
-    version = 29, // <-- 版本升級以反映 RoomChangeRequest 的主鍵變更
+    version = 31,
     exportSchema = false
 )
+@TypeConverters(Converters::class) // <<< ---【*** 在此處加上這行註解 ***】---
 abstract class AppDatabase : RoomDatabase() {
     abstract fun repairReportDao(): RepairReportDao
     abstract fun roomDao(): RoomDao
@@ -27,9 +29,6 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun paymentDao(): PaymentDao
     abstract fun roomChangeRequestDao(): RoomChangeRequestDao
 
-    // 【*** 新增：RoomDatabase 會自動實作此方法 ***】
-    // abstract fun clearAllTables() // RoomDatabase 已經內建了這個方法，我們可以直接呼叫
-
     companion object {
         @Volatile private var instance: AppDatabase? = null
         fun getDatabase(context: Context): AppDatabase =
@@ -37,7 +36,7 @@ abstract class AppDatabase : RoomDatabase() {
                 instance ?: Room.databaseBuilder(
                     context.applicationContext,
                     AppDatabase::class.java,
-                    "tenant_app_db" // <-- 建議給資料庫一個更明確的名稱
+                    "tenant_app_db"
                 )
                     .fallbackToDestructiveMigration()
                     .build().also { instance = it }

@@ -11,7 +11,7 @@ import kotlinx.coroutines.tasks.await
 
 class PaymentRepository(
     private val paymentDao: PaymentDao,
-    private val coroutineScope: CoroutineScope // Injected CoroutineScope
+    private val coroutineScope: CoroutineScope
 ) {
 
     private val firestore = FirebaseFirestore.getInstance()
@@ -22,8 +22,6 @@ class PaymentRepository(
     }
 
     private fun listenForAllPayments() {
-        // General listener for all payments to keep local cache updated.
-        // Consider adding .orderBy() if a specific order is beneficial for caching or initial display.
         paymentsCollection.addSnapshotListener { snapshot, error ->
             if (error != null) {
                 Log.e("PaymentRepo", "Listen failed for all payments.", error)
@@ -31,17 +29,13 @@ class PaymentRepository(
             }
             snapshot?.let {
                 val payments = it.toObjects<Payment>()
-                coroutineScope.launch { // Use the injected scope
+                coroutineScope.launch {
                     paymentDao.insertOrUpdateAll(payments)
                 }
             }
         }
     }
 
-    /**
-     * Gets a payment record Flow from the local DAO.
-     * The local DAO is kept in sync by the Firestore listener in the init block.
-     */
     fun getPaymentRecord(roomNo: String, month: String): Flow<Payment?> {
         return paymentDao.getPaymentRecord(roomNo, month)
     }
@@ -50,22 +44,34 @@ class PaymentRepository(
      * Inserts or updates a payment record in Firestore and then in the local DAO.
      */
     suspend fun insertOrUpdate(payment: Payment) {
-        // Ensure a consistent ID for Firestore document and local entity
         val docId = payment.id.ifBlank { "${payment.roomNumber}_${payment.recordMonth}" }
         val paymentWithId = if (payment.id.isBlank()) payment.copy(id = docId) else payment
 
         try {
-            // 1. Write to Firestore
             paymentsCollection.document(docId).set(paymentWithId).await()
-            // 2. Write to local DAO
-            coroutineScope.launch { // Use injected scope for DAO operation
-                paymentDao.insertOrUpdate(paymentWithId) // Assumes OnConflictStrategy.REPLACE
-            }.join() // Optional: wait for DAO operation if immediate consistency is needed
+            coroutineScope.launch {
+                paymentDao.insertOrUpdate(paymentWithId)
+            }.join()
         } catch (e: Exception) {
             Log.e("PaymentRepo", "Error inserting/updating payment $docId in Firestore", e)
-            // Consider re-throwing or specific error handling based on requirements.
-            // For now, if Firestore fails, the local cache won't be updated with this specific item.
-            throw e // Re-throw to make the caller aware of the failure
+            throw e
+        }
+    }
+
+    /**
+     * 【*** 新增此方法 ***】
+     * 處理付款確認，包括更新 isPaid 狀態。
+     */
+    suspend fun updatePaymentStatus(payment: Payment) {
+        if (payment.id.isBlank()) throw IllegalArgumentException("Payment ID cannot be blank for update.")
+        try {
+            paymentsCollection.document(payment.id).set(payment).await()
+            coroutineScope.launch {
+                paymentDao.insertOrUpdate(payment)
+            }.join()
+        } catch (e: Exception) {
+            Log.e("PaymentRepo", "Error updating payment status for ${payment.id}", e)
+            throw e
         }
     }
 }

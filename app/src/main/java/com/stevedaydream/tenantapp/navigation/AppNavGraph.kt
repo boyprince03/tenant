@@ -29,8 +29,6 @@ import kotlinx.coroutines.launch
 @Composable
 fun AppNavGraph(navController: NavHostController, db: AppDatabase) {
     val scope = rememberCoroutineScope()
-
-    // 【*** 核心修改 1：調整 Repository 初始化順序 ***】
     val roomRepository = remember { RoomRepository(db.roomDao(), scope) }
     val adminRepository = remember {
         AdminRepository(
@@ -41,23 +39,19 @@ fun AppNavGraph(navController: NavHostController, db: AppDatabase) {
             paymentDao = db.paymentDao(),
             electricMeterDao = db.electricMeterDao(),
             roomChangeRequestDao = db.roomChangeRequestDao(),
-            roomRepository = roomRepository, // Pass RoomRepository
+            roomRepository = roomRepository,
             db = db,
             coroutineScope = scope
         )
     }
-    // 【*** 核心修改 2：將 adminRepository 注入 AuthRepository ***】
     val authRepository = remember { AuthRepository(db.userDao(), adminRepository) }
-
     val userRepository = remember { UserRepository(db.userDao(), scope) }
     val requestRepository = remember { RoomChangeRequestRepository(db.roomChangeRequestDao()) }
     val repairReportRepository = remember { RepairReportRepository(db.repairReportDao(), scope) }
     val announcementRepository = remember { AnnouncementRepository(db.announcementDao(), scope) }
     val electricMeterRepository = remember { ElectricMeterRepository(db.electricMeterDao(), scope) }
     val paymentRepository = remember { PaymentRepository(db.paymentDao(), scope) }
-
     val context = LocalContext.current
-
     val startDestination = remember {
         val currentUser = FirebaseAuth.getInstance().currentUser
         if (currentUser != null) {
@@ -66,6 +60,7 @@ fun AppNavGraph(navController: NavHostController, db: AppDatabase) {
             "visitor_home"
         }
     }
+
 
     NavHost(navController, startDestination = startDestination) {
 
@@ -275,7 +270,7 @@ fun AppNavGraph(navController: NavHostController, db: AppDatabase) {
             arguments = listOf(navArgument("userId") { type = NavType.StringType })
         ) { backStackEntry ->
             val userId = backStackEntry.arguments?.getString("userId") ?: ""
-            val factory = LandlordViewModelFactory(userId, db, requestRepository)
+            val factory = LandlordViewModelFactory(userId, db, requestRepository, roomRepository)
             LandlordHomeScreen(
                 navController = navController,
                 viewModelFactory = factory,
@@ -298,9 +293,11 @@ fun AppNavGraph(navController: NavHostController, db: AppDatabase) {
                     db.userDao().getUserById(userId).collectLatest { user ->
                         currentUser = user; isLoadingUser = false
                     }
-                } else { isLoadingUser = false }
+                } else {
+                    isLoadingUser = false
+                }
             }
-            if(isLoadingUser) {
+            if (isLoadingUser) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
             } else {
                 LandlordRoomManageScreen(roomRepository = roomRepository, currentUser = currentUser, navController = navController)
@@ -328,6 +325,23 @@ fun AppNavGraph(navController: NavHostController, db: AppDatabase) {
                 viewModel = viewModel,
                 userId = userId
             )
+        }
+
+        composable(
+            "payment_approval/{paymentId}", // 【*** 新增導航路徑 ***】
+            arguments = listOf(navArgument("paymentId") { type = NavType.StringType })
+        ) { backStackEntry ->
+            val paymentId = backStackEntry.arguments?.getString("paymentId") ?: ""
+            LandlordPaymentApprovalScreen(
+                paymentId = paymentId,
+                db = db,
+                navController = navController,
+                paymentRepository = paymentRepository
+            )
+        }
+        composable("upload_test") {
+            val viewModel: UploadTestViewModel = viewModel(factory = UploadTestViewModelFactory())
+            UploadTestScreen(navController = navController, viewModel = viewModel)
         }
 
         // Common Pages

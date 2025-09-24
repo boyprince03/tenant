@@ -11,7 +11,10 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-
+import android.net.Uri // 新增 import
+import com.google.firebase.storage.ktx.storage // 新增 import
+import com.google.firebase.ktx.Firebase // 新增 import
+import kotlinx.coroutines.tasks.await // 新增 import
 data class AdminRoomListUiState(
     val roomGroups: Map<User?, List<RoomEntity>> = emptyMap(),
     val allLandlords: List<User> = emptyList(), // Store all landlords for the dropdown
@@ -23,12 +26,55 @@ data class AdminRoomListUiState(
 )
 
 class AdminRoomListViewModel(private val adminRepository: AdminRepository) : ViewModel() {
-
+    private val storage = Firebase.storage // 初始化 Firebase Storage
     private val _uiState = MutableStateFlow(AdminRoomListUiState())
     val uiState: StateFlow<AdminRoomListUiState> = _uiState.asStateFlow()
 
     init {
         loadAllRoomsGroupedByLandlord()
+    }
+    // 【*** 核心修改：修改 onSaveRoom 以處理圖片上傳 ***】
+    fun onSaveRoom(room: RoomEntity, newImageUris: List<Uri>) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoading = true) } // 顯示載入中
+            try {
+                // 1. 上傳新圖片
+                val newImageUrls = newImageUris.map { uri ->
+                    uploadImage(room.id, uri)
+                }
+
+                // 2. 組合新舊圖片 URL
+                val finalImageUrls = room.imageUrls + newImageUrls
+                val roomToSave = room.copy(imageUrls = finalImageUrls)
+
+                // 3. 儲存 RoomEntity (包含更新後的 URL 列表)
+                if (_uiState.value.isCreatingNew) {
+                    adminRepository.addRoom(roomToSave)
+                } else {
+                    adminRepository.updateRoom(roomToSave)
+                }
+                onDismissDialog()
+                loadAllRoomsGroupedByLandlord() // 刷新列表
+            } catch (e: Exception) {
+                _uiState.update { it.copy(error = "儲存失敗: ${e.message}", isLoading = false) }
+            } finally {
+                _uiState.update { it.copy(isLoading = false) }
+            }
+        }
+    }
+
+    // 【*** 新增：圖片上傳的輔助函式 ***】
+    private suspend fun uploadImage(roomId: String, uri: Uri): String {
+        // 建立一個獨一無二的檔案名稱
+        val fileName = "image_${System.currentTimeMillis()}.jpg"
+        // 建立在 Firebase Storage 中的儲存路徑
+        val storageRef = storage.reference.child("rooms/$roomId/$fileName")
+
+        // 上傳檔案
+        storageRef.putFile(uri).await()
+
+        // 取得下載 URL
+        return storageRef.downloadUrl.await().toString()
     }
 
     fun loadAllRoomsGroupedByLandlord() {

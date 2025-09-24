@@ -31,18 +31,29 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
     override fun onNewToken(token: String) {
         super.onNewToken(token)
         Log.d(TAG, "Refreshed token: $token")
-        // sendRegistrationToServer(token)
     }
 
     private fun sendNotification(title: String?, messageBody: String?, data: Map<String, String>) {
-        // --- 【*** 核心修正：landlordId 是 String (Firebase UID)，不應轉換為 Int ***】 ---
-        val landlordId = data["landlordId"] // 直接取得 String
+        val landlordId = data["landlordId"]
+        val paymentId = data["paymentId"]
+        val navigateTo = data["navigateTo"] ?: "landlord_home"
 
         val intent = Intent(this, MainActivity::class.java).apply {
             addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
-            if (landlordId != null) {
-                putExtra("navigateTo", "room_change_approval")
-                putExtra("landlordId", landlordId) // 傳遞 String
+            // 【*** 核心修改：新增邏輯處理新的導航類型 ***】
+            when (navigateTo) {
+                "room_change_approval" -> {
+                    putExtra("navigateTo", "room_change_approval")
+                    putExtra("landlordId", landlordId)
+                }
+                "payment_approval" -> {
+                    putExtra("navigateTo", "payment_approval")
+                    putExtra("landlordId", landlordId)
+                    putExtra("paymentId", paymentId)
+                }
+                else -> {
+                    putExtra("navigateTo", navigateTo)
+                }
             }
         }
 

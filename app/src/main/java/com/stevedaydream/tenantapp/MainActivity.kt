@@ -20,15 +20,24 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import java.util.UUID
 
+// 【*** 新增：Firebase App Check 的相關導入 ***】
+import com.google.firebase.FirebaseApp
+import com.google.firebase.appcheck.FirebaseAppCheck
+import com.google.firebase.appcheck.playintegrity.PlayIntegrityAppCheckProviderFactory
+
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val db = AppDatabase.getDatabase(this)
 
-        // --- 【*** 移除所有測試資料的 List ***】 ---
+        // 【*** 修正點 1：在此處初始化 Firebase App Check ***】
+        FirebaseApp.initializeApp(this)
+        val firebaseAppCheck = FirebaseAppCheck.getInstance()
+        firebaseAppCheck.installAppCheckProviderFactory(
+            PlayIntegrityAppCheckProviderFactory.getInstance()
+        )
 
         CoroutineScope(Dispatchers.IO).launch {
-            // 只保留建立預設 admin 帳號的邏輯
             createDefaultAdmins()
         }
 
@@ -56,14 +65,10 @@ class MainActivity : ComponentActivity() {
             val username = "admin$adminIndex"
 
             try {
-                // 檢查 Firestore 中是否已存在該用戶名的管理員
                 val existingUser = usersCollection.whereEqualTo("username", username).get().await()
                 if (existingUser.isEmpty) {
-                    // 1. 在 Firebase Auth 建立帳號
                     val authResult = auth.createUserWithEmailAndPassword(email, password).await()
-                    val uid = authResult.user?.uid ?: continue // 如果 uid 為空則跳過
-
-                    // 2. 在 Firestore 的 users 集合中建立對應的使用者文件
+                    val uid = authResult.user?.uid ?: continue
                     val adminUser = User(
                         id = uid,
                         username = username,
@@ -75,12 +80,10 @@ class MainActivity : ComponentActivity() {
                     Log.d("AdminInit", "管理員 $username 已存在，跳過建立。")
                 }
             } catch (e: Exception) {
-                // 如果帳號已存在於 Auth 但不存在於 Firestore，可能會拋出例外
                 Log.e("AdminInit", "建立管理員 $username 失敗: ${e.message}")
             }
         }
     }
-
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
@@ -95,7 +98,6 @@ class MainActivity : ComponentActivity() {
             val landlordId = intent.getStringExtra("landlordId")
             if (!landlordId.isNullOrBlank()) {
                 navController.navigate("room_change_approval/$landlordId")
-                // 清除 intent 中的資料，避免重複導航
                 intent.removeExtra("navigateTo")
                 intent.removeExtra("landlordId")
             }

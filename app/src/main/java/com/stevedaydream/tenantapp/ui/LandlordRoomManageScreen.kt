@@ -101,7 +101,7 @@ fun LandlordRoomManageScreen(
                 isNew = isCreatingNew,
                 allLandlords = emptyList(), // 房東介面不顯示指派選單
                 onDismiss = { showDialog = false },
-                onSave = { room ->
+                onSave = { room,imageUris ->
                     showDialog = false
                     scope.launch {
                         try {

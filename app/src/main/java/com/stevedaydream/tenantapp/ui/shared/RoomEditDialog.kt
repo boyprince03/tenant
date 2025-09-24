@@ -15,6 +15,17 @@ import com.stevedaydream.tenantapp.data.RoomEntity
 import com.stevedaydream.tenantapp.data.User
 import java.text.SimpleDateFormat
 import java.util.*
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AddAPhoto
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import coil.compose.AsyncImage
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -23,7 +34,7 @@ fun RoomEditDialog(
     isNew: Boolean,
     allLandlords: List<User>, // 傳入所有房東列表以建立下拉選單
     onDismiss: () -> Unit,
-    onSave: (RoomEntity) -> Unit,
+    onSave: (RoomEntity, List<Uri>) -> Unit,
     onDelete: (RoomEntity) -> Unit
 ) {
     var roomNumber by remember { mutableStateOf(room.roomNumber) }
@@ -41,6 +52,24 @@ fun RoomEditDialog(
     var rentStartDate by remember { mutableStateOf(room.rentStartDate) }
     val sdf = remember { SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()) }
     val context = LocalContext.current
+
+    // 【*** 新增 1：管理圖片 URL 的狀態 ***】
+    // imageUrls 用於存放已上傳的網路圖片 URL
+    var imageUrls by remember { mutableStateOf(room.imageUrls) }
+    // newImageUris 用於存放使用者剛從手機選取，還未上傳的圖片 Uri
+    var newImageUris by remember { mutableStateOf<List<Uri>>(emptyList()) }
+
+    // 【*** 新增 2：圖片選取器 ***】
+    val imagePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetMultipleContents()
+    ) { uris: List<Uri> ->
+        // 限制總圖片數量不超過 5 張
+        val currentCount = imageUrls.size + newImageUris.size
+        val canAddCount = 5 - currentCount
+        if (canAddCount > 0) {
+            newImageUris = newImageUris + uris.take(canAddCount)
+        }
+    }
 
     // 用於指派房東的狀態
     var selectedLandlordCode by remember { mutableStateOf(room.landlordCode) }
@@ -158,6 +187,38 @@ fun RoomEditDialog(
                 }
                 OutlinedTextField(value = rentEndDate, onValueChange = {}, label = { Text("租賃結束日 (自動計算)") }, modifier = Modifier.fillMaxWidth(), enabled = false)
                 OutlinedTextField(value = note, onValueChange = { note = it }, label = { Text("備註") }, modifier = Modifier.fillMaxWidth())
+                // 【*** 新增 3：圖片預覽與管理區塊 ***】
+                Divider(Modifier.padding(vertical = 8.dp))
+                Text("房間圖片 (最多5張)", style = MaterialTheme.typography.titleMedium)
+
+                // 使用 LazyRow 橫向展示圖片
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    // 顯示已上傳的圖片 (URL)
+                    items(imageUrls) { url ->
+                        ImagePreviewItem(
+                            data = url,
+                            onRemove = { imageUrls = imageUrls - url }
+                        )
+                    }
+                    // 顯示新選取的圖片 (Uri)
+                    items(newImageUris) { uri ->
+                        ImagePreviewItem(
+                            data = uri,
+                            onRemove = { newImageUris = newImageUris - uri }
+                        )
+                    }
+                }
+
+                // 如果圖片總數小於 5，則顯示 "新增圖片" 按鈕
+                if (imageUrls.size + newImageUris.size < 5) {
+                    Button(
+                        onClick = { imagePickerLauncher.launch("image/*") },
+                        modifier = Modifier.padding(top = 8.dp)
+                    ) {
+                        Icon(Icons.Default.AddAPhoto, contentDescription = "新增圖片", modifier = Modifier.padding(end = 8.dp))
+                        Text("新增圖片")
+                    }
+                }
             }
         },
         confirmButton = {
@@ -175,8 +236,10 @@ fun RoomEditDialog(
                             rentStartDate = rentStartDate,
                             rentEndDate = rentEndDate,
                             rentDuration = rentDuration,
-                            landlordCode = selectedLandlordCode // 儲存選擇的房東
-                        )
+                            landlordCode = selectedLandlordCode, // 儲存選擇的房東
+                            imageUrls = imageUrls // 將目前的 URL 列表存入
+                        ),
+                        newImageUris // 將新選擇的圖片 Uri 列表也傳出去
                     )
                 }
             }) { Text("儲存") }
@@ -193,4 +256,29 @@ fun RoomEditDialog(
             }
         }
     )
+}
+// 【*** 新增 4：一個共用的圖片預覽 Composable ***】
+@Composable
+private fun ImagePreviewItem(data: Any, onRemove: () -> Unit) {
+    Box(
+        modifier = Modifier.size(100.dp)
+    ) {
+        // 使用 Coil 的 AsyncImage 來載入圖片，它能同時處理網路 URL 和本地 Uri
+        AsyncImage(
+            model = data,
+            contentDescription = "房間圖片",
+            modifier = Modifier.fillMaxSize(),
+            contentScale = ContentScale.Crop
+        )
+        // 右上角的刪除按鈕
+        IconButton(
+            onClick = onRemove,
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(4.dp)
+                .size(24.dp)
+        ) {
+            Icon(Icons.Default.Close, contentDescription = "移除圖片", tint = Color.White)
+        }
+    }
 }

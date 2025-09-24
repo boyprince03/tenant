@@ -12,5 +12,6 @@ data class Payment(
     val electricityFee: Int = 0,
     val totalAmount: Int = 0,
     var isPaid: Boolean = false,
-    val paymentDate: Long? = null // 繳費日期
+    val paymentDate: Long? = null, // 繳費日期
+    val screenshotUrl: String? = null // 【*** 新增的欄位應在此處 ***】
 )

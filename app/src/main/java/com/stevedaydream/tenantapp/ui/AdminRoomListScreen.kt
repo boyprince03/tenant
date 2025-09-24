@@ -49,7 +49,7 @@ fun AdminRoomListScreen(
             isNew = uiState.isCreatingNew,
             allLandlords = uiState.allLandlords,
             onDismiss = { viewModel.onDismissDialog() },
-            onSave = { room -> viewModel.onSaveRoom(room) },
+            onSave = { room,imageUris-> viewModel.onSaveRoom(room) },
             onDelete = { room -> viewModel.onDeleteRoom(room) }
         )
     }

@@ -15,6 +15,7 @@ data class LandlordUiState(
     val announcements: List<Announcement> = emptyList(),
     val repairReports: List<RepairReport> = emptyList(),
     val pendingChangeRequests: List<RoomChangeRequest> = emptyList(),
+    val totalRooms: Int = 0, // 【*** 核心修改 1：新增 totalRooms 屬性 ***】
     val isLoading: Boolean = true
 )
 
@@ -24,10 +25,11 @@ data class LandlordUiState(
  */
 class LandlordViewModel(
     private val landlordId: String,
-    private val userDao: UserDao, // Store as property if used elsewhere, or pass directly
+    private val userDao: UserDao,
     private val announcementDao: AnnouncementDao,
     private val repairReportDao: RepairReportDao,
-    private val requestRepository: RoomChangeRequestRepository
+    private val requestRepository: RoomChangeRequestRepository,
+    private val roomRepository: RoomRepository // 【*** 核心修改 2：注入 RoomRepository ***】
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(LandlordUiState())
@@ -39,33 +41,25 @@ class LandlordViewModel(
             userDao.getUserById(landlordId).collectLatest { collectedLandlord ->
                 if (collectedLandlord == null) {
                     _uiState.update { it.copy(isLoading = false, landlord = null) }
-                    return@collectLatest // Exit if landlord is not found
+                    return@collectLatest
                 }
 
-                // Check for landlordCode after confirming landlord is not null
                 if (collectedLandlord.landlordCode == null) {
-                    // Landlord exists but is not properly configured as a landlord (no landlordCode)
-                    // Update UI to show landlord info but indicate that landlord-specific data can't be loaded.
-                    // Or, treat as an error/incomplete state depending on business logic.
-                    _uiState.update { it.copy(isLoading = false, landlord = collectedLandlord, announcements = emptyList(), repairReports = emptyList(), pendingChangeRequests = emptyList()) }
-                    // Optionally, you might want to fetch announcements and repair reports that are not landlord-specific if any.
-                    // For now, assuming if landlordCode is null, we stop further landlord-specific loading.
-                     combine(
-                        announcementDao.getAll(), // Assuming these are general, not landlord-specific
-                        repairReportDao.getAll()  // Assuming these are general, not landlord-specific
+                    combine(
+                        announcementDao.getAll(),
+                        repairReportDao.getAll()
                     ) { announcements, reports ->
                         _uiState.update {
                             it.copy(
                                 landlord = collectedLandlord,
                                 announcements = announcements,
                                 repairReports = reports,
-                                pendingChangeRequests = emptyList(), // No requests if no landlord code
+                                pendingChangeRequests = emptyList(),
                                 isLoading = false
                             )
                         }
-                    }.catch { e -> 
-                        // Handle exceptions from combine or its inner flows
-                         _uiState.update { it.copy(isLoading = false, landlord = collectedLandlord) } 
+                    }.catch { e ->
+                        _uiState.update { it.copy(isLoading = false, landlord = collectedLandlord) }
                     }.collect()
                     return@collectLatest
                 }
@@ -74,18 +68,19 @@ class LandlordViewModel(
                 combine(
                     announcementDao.getAll(),
                     repairReportDao.getAll(),
-                    requestRepository.getRequestsByLandlord(collectedLandlord.landlordCode) // Safe to use landlordCode here
-                ) { announcements, reports, requests ->
+                    requestRepository.getRequestsByLandlord(collectedLandlord.landlordCode),
+                    roomRepository.getRoomsForLandlord(collectedLandlord.landlordCode) // 【*** 核心修改 3：監聽房間列表 ***】
+                ) { announcements, reports, requests, rooms ->
                     LandlordUiState(
                         landlord = collectedLandlord,
                         announcements = announcements,
                         repairReports = reports,
                         pendingChangeRequests = requests.filter { it.status == "pending" },
+                        totalRooms = rooms.size, // 【*** 核心修改 4：更新 totalRooms ***】
                         isLoading = false
                     )
                 }.catch { e ->
-                     // Handle exceptions from combine or its inner flows
-                    _uiState.update { it.copy(isLoading = false, landlord = collectedLandlord) } // Update with what we have
+                    _uiState.update { it.copy(isLoading = false, landlord = collectedLandlord) }
                 }.collect { state ->
                     _uiState.value = state
                 }
@@ -100,7 +95,8 @@ class LandlordViewModel(
 class LandlordViewModelFactory(
     private val landlordId: String,
     private val db: AppDatabase,
-    private val requestRepository: RoomChangeRequestRepository
+    private val requestRepository: RoomChangeRequestRepository,
+    private val roomRepository: RoomRepository // 【*** 核心修改 5：注入 RoomRepository ***】
 ) : ViewModelProvider.Factory {
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         if (modelClass.isAssignableFrom(LandlordViewModel::class.java)) {
@@ -110,7 +106,8 @@ class LandlordViewModelFactory(
                 db.userDao(),
                 db.announcementDao(),
                 db.repairReportDao(),
-                requestRepository
+                requestRepository,
+                roomRepository // 【*** 核心修改 6：傳遞 RoomRepository ***】
             ) as T
         }
         throw IllegalArgumentException("Unknown ViewModel class")

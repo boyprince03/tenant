@@ -55,6 +55,7 @@ dependencies {
     implementation(libs.androidx.material3)
 // 【請替換為】
     implementation("androidx.datastore:datastore-preferences:1.0.0")
+    implementation(libs.androidx.compose.foundation)
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
@@ -80,6 +81,8 @@ dependencies {
 //    excel import
     implementation ("net.sourceforge.jexcelapi:jxl:2.6.12")
     implementation ("androidx.compose.material:material-icons-extended:<compose_version>")
+    implementation("androidx.compose.ui:ui")
+    implementation("androidx.compose.material3:material3")
     // Import the Firebase BoM
     // 導入 Firebase BOM (Bill of Materials)，它會自動管理 Firebase 套件的版本
     implementation(platform("com.google.firebase:firebase-bom:33.1.0"))
@@ -97,6 +100,18 @@ dependencies {
     implementation ("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.7.1")
     // 【*** 新增此行：Google 登入服務 ***】
     implementation ("com.google.android.gms:play-services-auth:20.7.0") // 建議使用最新版本
+    // 【*** 新增 1：Firebase Cloud Storage ***】
+    // 用於上傳、下載、刪除圖片檔案
+
+    implementation("com.google.firebase:firebase-storage-ktx")
+    implementation("com.google.firebase:firebase-functions-ktx")
+    implementation("com.google.firebase:firebase-appcheck-playintegrity:17.1.1")
+    implementation(platform("com.google.firebase:firebase-bom:latest_version"))
+    // 【*** 新增 2：Coil 圖片載入庫 ***】
+    // 在 Jetpack Compose 中非同步載入網路圖片的最佳選擇
+    implementation("io.coil-kt:coil-compose:2.6.0")
+
+
 }
 
 

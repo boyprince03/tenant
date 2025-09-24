@@ -5,6 +5,7 @@ import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -33,13 +34,13 @@ fun LandlordHomeScreen(
     val viewModel: LandlordViewModel = viewModel(factory = viewModelFactory)
     val uiState by viewModel.uiState.collectAsState()
 
+    var showInfoDialog by remember { mutableStateOf(false) }
     val clipboardManager = LocalClipboardManager.current
     val context = LocalContext.current
     val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.TAIWAN)
 
     var expanded by remember { mutableStateOf(false) }
     var codeVisible by remember { mutableStateOf(false) }
-    // var showResetConfirmDialog by remember { mutableStateOf(false) } // <-- 已移除
 
     fun maskCode(code: String): String {
         return if (code.length <= 4) "*".repeat(code.length)
@@ -49,7 +50,14 @@ fun LandlordHomeScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("房東後台", style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold)) },
+                title = {
+                    Box(modifier = Modifier.clickable { showInfoDialog = true }) {
+                        Text(
+                            text = "使用者：${uiState.landlord?.username ?: "房東"}",
+                            style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold)
+                        )
+                    }
+                },
                 actions = {
                     IconButton(onClick = { expanded = true }) {
                         Icon(Icons.Default.MoreVert, contentDescription = "選單")
@@ -130,6 +138,40 @@ fun LandlordHomeScreen(
                         }
                     }
                 }
+                // 【*** 核心修改 8：新增顯示房間總數的 Text 元件 ***】
+//                Row(
+//                    modifier = Modifier.fillMaxWidth(),
+//                    horizontalArrangement = Arrangement.Center
+//                ) {
+//                    Text(
+//                        text = "您目前管理 ${uiState.totalRooms} 間房間",
+//                        style = MaterialTheme.typography.titleMedium,
+//                        color = MaterialTheme.colorScheme.primary
+//                    )
+//                }
+
+                if (showInfoDialog) {
+                    AlertDialog(
+                        onDismissRequest = { showInfoDialog = false },
+                        title = { Text("使用者資訊") },
+                        text = {
+                            Column {
+                                Text("姓名：${uiState.landlord?.username ?: "N/A"}")
+                                Text("身分：${uiState.landlord?.role ?: "N/A"}")
+                                Text("房東序號：${uiState.landlord?.landlordCode ?: "N/A"}")
+                                Text("您目前管理 ${uiState.totalRooms} 間房間",
+                                    color = MaterialTheme.colorScheme.primary)
+
+                            }
+                        },
+                        confirmButton = {
+                            TextButton(onClick = { showInfoDialog = false }) {
+                                Text("關閉")
+                            }
+                        }
+                    )
+                }
+
                 if (uiState.pendingChangeRequests.isNotEmpty()) {
                     Card(
                         modifier = Modifier
@@ -287,7 +329,6 @@ fun LandlordHomeScreen(
                 ElevatedButton(
                     modifier = Modifier.fillMaxWidth(),
                     onClick = {
-                        // 【*** 核心修正：在導航路徑中加入 landlord.id ***】
                         navController.navigate("excel_import/${landlord.id}")
                     }
                 ) {

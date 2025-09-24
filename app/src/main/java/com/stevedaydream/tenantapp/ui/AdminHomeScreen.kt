@@ -16,6 +16,7 @@ import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Input
 import androidx.compose.material.icons.filled.Science
 import androidx.compose.material.icons.filled.Storage
+import androidx.compose.material.icons.filled.UploadFile
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -142,6 +143,19 @@ fun AdminHomeScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             item {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceAround
+                ) {
+                    CardButton(
+                        text = "上傳測試",
+                        icon = Icons.Default.UploadFile,
+                        onClick = { navController.navigate("upload_test") },
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+            }
+            item {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
@@ -237,6 +251,32 @@ fun AdminHomeScreen(
                     Text("請求: ${request.tenantName} 從 ${request.currentRoomNumber} 到 ${request.requestedRoomNumber}")
                 }
             }
+        }
+    }
+}
+@Composable
+fun CardButton(
+    text: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        modifier = modifier.height(120.dp),
+        onClick = onClick
+    ) {
+        Column(
+            modifier = Modifier.fillMaxSize().padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = text,
+                modifier = Modifier.size(48.dp)
+            )
+            Spacer(Modifier.height(8.dp))
+            Text(text = text, style = MaterialTheme.typography.bodyLarge)
         }
     }
 }
